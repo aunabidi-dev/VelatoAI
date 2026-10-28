@@ -1,7 +1,12 @@
 """
-Zero-Trust PCI Payment Service
+Zero-Trust PCI Payment Service — Phase 2 Hardened
 Isolated Data Plane - Runs in customer VPC / protected container.
 Never stores or transmits unmasked PAN or CVV to the control plane.
+
+Phase 2 additions:
+  - Log redaction filter installed at startup
+  - Timeout check endpoint for active sessions
+  - Enhanced abort with timeout tracking
 """
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,15 +14,26 @@ from pydantic import BaseModel
 from typing import Dict, Any, Optional
 import uuid
 import json
+import logging
 
 from .core.state_machine import PaymentSession, PaymentState
 from .core.token_vault import vault
 from .core.whisper_stt import whisper_engine
+from .core.log_redaction import install_log_redaction
+
+# Phase 2: Install PCI log redaction filter on ALL loggers at startup
+install_log_redaction()  # Root logger
+install_log_redaction("uvicorn")
+install_log_redaction("uvicorn.access")
+install_log_redaction("uvicorn.error")
+install_log_redaction("fastapi")
+
+logger = logging.getLogger("payment-service")
 
 app = FastAPI(
     title="Zero-Trust PCI Payment Microservice",
-    description="PCI Safe Mode Voice Intercept & Tokenization Service",
-    version="1.0.0"
+    description="PCI Safe Mode Voice Intercept & Tokenization Service (Phase 2 Hardened)",
+    version="2.0.0"
 )
 
 # Enable CORS for local dev & control plane
@@ -47,7 +63,10 @@ def health():
         "status": "healthy",
         "service": "payment-service (Zero-Trust Data Plane)",
         "memory_sanitization": "enforced",
-        "pci_dss_scope": "isolated"
+        "pci_dss_scope": "isolated",
+        "phase": "2-hardened",
+        "log_redaction": "active",
+        "state_timeouts": "enforced",
     }
 
 @app.post("/api/payment/session")
@@ -55,9 +74,10 @@ def create_payment_session(req: InitSessionRequest):
     session_id = f"sess_{uuid.uuid4().hex[:12]}"
     session = PaymentSession(session_id=session_id, call_id=req.call_id)
     ACTIVE_SESSIONS[session_id] = session
-    
+
     # Automatically begin capture flow
     res = session.start_capture()
+    logger.info(f"Payment session {session_id} created for call {req.call_id}")
     return res
 
 @app.get("/api/payment/session/{session_id}/status")
@@ -65,7 +85,10 @@ def get_session_status(session_id: str):
     session = ACTIVE_SESSIONS.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-        
+
+    # Phase 2: Check timeout on status poll
+    timed_out = session.check_timeout()
+
     return {
         "session_id": session.session_id,
         "call_id": session.call_id,
@@ -73,7 +96,12 @@ def get_session_status(session_id: str):
         "detected_brand": session.detected_brand,
         "expiry": session.expiry_str,
         "is_wiped": session.buffer.is_wiped,
-        "token_result": session.token_result
+        "token_result": session.token_result,
+        "timed_out": timed_out or session.timed_out,
+        "seconds_remaining": session.seconds_remaining(),
+        "pan_attempts": session.pan_attempts,
+        "expiry_attempts": session.expiry_attempts,
+        "cvv_attempts": session.cvv_attempts,
     }
 
 def get_or_create_session(session_id: str) -> PaymentSession:
@@ -108,6 +136,14 @@ async def submit_audio(session_id: str, file: UploadFile = File(...)):
     session = ACTIVE_SESSIONS.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    # Phase 2: Check timeout before processing audio
+    if session.check_timeout():
+        return {
+            "error": "Session timed out",
+            "state": session.state.value,
+            "timed_out": True,
+        }
 
     audio_bytes = await file.read()
     stt_res = whisper_engine.process_spoken_card(
@@ -145,6 +181,33 @@ def abort_payment(session_id: str):
     session.abort("Aborted by client request")
     return {"session_id": session_id, "state": session.state.value, "wiped": session.buffer.is_wiped}
 
+# Phase 2: Endpoint to check and enforce timeouts on all active sessions
+@app.post("/api/payment/check-timeouts")
+def check_all_timeouts():
+    """
+    Phase 2: Scans all active sessions for timeouts.
+    Any session that has exceeded its state timeout is automatically
+    aborted and wiped. Called periodically by the control plane.
+    """
+    timed_out_sessions = []
+    for session_id, session in list(ACTIVE_SESSIONS.items()):
+        if session.state in (PaymentState.RESUMING, PaymentState.FAILED, PaymentState.TIMED_OUT):
+            continue
+        if session.check_timeout():
+            timed_out_sessions.append({
+                "session_id": session_id,
+                "call_id": session.call_id,
+                "state": session.state.value,
+                "wiped": session.buffer.is_wiped,
+            })
+            logger.info(f"Session {session_id} timed out and wiped")
+
+    return {
+        "checked": len(ACTIVE_SESSIONS),
+        "timed_out": len(timed_out_sessions),
+        "details": timed_out_sessions,
+    }
+
 @app.websocket("/ws/payment/{session_id}")
 async def websocket_payment_endpoint(websocket: WebSocket, session_id: str):
     """
@@ -170,7 +233,19 @@ async def websocket_payment_endpoint(websocket: WebSocket, session_id: str):
             raw_data = await websocket.receive_text()
             msg = json.loads(raw_data)
             msg_type = msg.get("type")
-            
+
+            # Phase 2: Check timeout before processing any message
+            if session.check_timeout():
+                await websocket.send_json({
+                    "type": "timeout",
+                    "data": {
+                        "state": session.state.value,
+                        "wiped": session.buffer.is_wiped,
+                        "message": "Session timed out. Memory wiped.",
+                    }
+                })
+                break
+
             if msg_type == "spoken_pan":
                 res = session.process_pan_input(msg.get("text", ""))
                 await websocket.send_json({"type": "pan_result", "data": res})
@@ -189,5 +264,6 @@ async def websocket_payment_endpoint(websocket: WebSocket, session_id: str):
                 break
     except WebSocketDisconnect:
         # Hang-up or disconnect during payment: automatically wipe memory immediately!
-        if session.state not in (PaymentState.RESUMING, PaymentState.FAILED):
+        if session.state not in (PaymentState.RESUMING, PaymentState.FAILED, PaymentState.TIMED_OUT):
             session.abort("Customer disconnected during payment")
+            logger.info(f"Session {session_id}: hang-up wipe triggered")

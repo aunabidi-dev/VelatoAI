@@ -102,9 +102,16 @@ Run the full walking skeleton and zero-trust verification test suite:
 python -m pytest tests/ -v
 ```
 
-**Tests include:**
-- `tests/test_luhn.py`: Luhn Mod 10 checksum, BIN brand detection (Visa, Mastercard, Amex, Discover), CVV and expiry validation.
+**Tests include (89 tests):**
+- `tests/test_phase2_hardening.py`: Complete end-to-end integration test of Phase 2 zero-trust hardening.
+- `tests/test_log_redaction.py`: Log redaction filter verifying Luhn-valid PAN masking across loggers.
+- `tests/test_redaction_filter.py`: Copilot transcript redaction preventing early slips from reaching AI models.
+- `tests/test_recording_service.py`: Server-side recording state, PCI withheld silence gap, and timeline markers.
+- `tests/test_state_timeouts.py`: Inactivity timeouts (30-60s) per capture state, per-field retry counters, auto-wipe.
+- `tests/test_leak_scanner.py`: Multi-store scanner (audit events, transcript chunks, recording metadata) confirming 0 leaks.
+- `tests/test_walking_skeleton.py`: End-to-end integration test of the complete Phase 1 walking skeleton.
+- `tests/test_luhn.py`: Luhn Mod 10 checksum, BIN brand detection, CVV and expiry validation.
 - `tests/test_memory_wipe.py`: Buffer zeroization and automatic memory wiping upon exit.
 - `tests/test_token_vault.py`: Mock PCI Payment Gateway tokenization, strict isolation from PAN.
-- `tests/test_voice_agent.py`: Spoken numbers parsing, natural speech correction ("no last digit was two"), compound words.
-- `tests/test_walking_skeleton.py`: End-to-end integration test of the complete Phase 1 lifecycle.
+- `tests/test_voice_agent.py`: Spoken numbers parsing, natural speech correction, compound words.
+- `tests/test_whisper_stt.py`: Whisper CPU STT pipeline and voice parser.
