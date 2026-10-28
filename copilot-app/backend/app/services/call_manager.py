@@ -1,20 +1,30 @@
 """
-Call Management & Audio Isolation Orchestration Service
-Enforces server-side isolation, copilot blackout, and recording pause/resume markers.
+Call Management & Audio Isolation Orchestration Service — Phase 2 Hardened
+Enforces server-side isolation, copilot blackout, recording pause/resume,
+supervisor join prevention, and transcript redaction.
+
+Phase 2 additions:
+  - Supervisor join prevention: no new participants during Safe Mode
+  - Recording service integration: server-side pause/resume with PCI markers
+  - Transcript redaction: masks PAN before transcript reaches copilot model
 """
 from typing import Dict, Any, Optional, Set
+import os
 import time
 import httpx
 from .audit_service import audit_service
+from .recording_service import recording_service
+from .redaction_filter import redact_transcript
 
-PAYMENT_SERVICE_URL = "http://localhost:8001"
+PAYMENT_SERVICE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://localhost:8001")
+
 
 class CallSession:
     def __init__(self, call_id: str, customer_name: str = "Jane Doe", agent_id: str = "agent_01"):
         self.call_id = call_id
         self.customer_name = customer_name
         self.agent_id = agent_id
-        
+
         # Audio routing states
         self.is_active = True
         self.safe_mode_active = False
@@ -22,17 +32,21 @@ class CallSession:
         self.recording_active = True
         self.recording_paused_pci = False
         self.copilot_blackout = False
-        
+
+        # Phase 2: Supervisor join lock — blocks new subscriptions during Safe Mode
+        self.safe_mode_locked = False
+
         # Safe Mode tracking
         self.payment_session_id: Optional[str] = None
         self.token_ref: Optional[str] = None
         self.last4: Optional[str] = None
         self.brand: Optional[str] = None
         self.pci_timeline_markers: list = []
-        
+
         # Connected WebSocket clients: role -> set of WebSocket instances
         self.connections: Dict[str, set] = {"agent": set(), "customer": set()}
         self.created_at = time.time()
+
 
 class CallManager:
     def __init__(self):
@@ -41,6 +55,10 @@ class CallManager:
     def create_call(self, call_id: str, customer_name: str = "Jane Doe", agent_id: str = "agent_01") -> CallSession:
         call = CallSession(call_id=call_id, customer_name=customer_name, agent_id=agent_id)
         self.calls[call_id] = call
+
+        # Phase 2: Start server-side recording
+        recording_service.start_recording(call_id)
+
         audit_service.record_event(
             call_id=call_id,
             event_type="CALL_CONNECTED",
@@ -51,6 +69,27 @@ class CallManager:
     def get_call(self, call_id: str) -> Optional[CallSession]:
         return self.calls.get(call_id)
 
+    def can_join_call(self, call_id: str, role: str) -> bool:
+        """
+        Phase 2: Supervisor join prevention.
+        During Safe Mode, NO new participants (including supervisors)
+        can join or subscribe to the audio.
+        Only existing 'agent' and 'customer' connections are allowed.
+        """
+        call = self.get_call(call_id)
+        if not call:
+            return True  # Call doesn't exist yet, allow connection to create it
+
+        if call.safe_mode_locked and role not in ("agent", "customer"):
+            return False  # Block supervisor, observer, or any new role
+
+        # Even existing roles: block NEW agent connections during Safe Mode
+        if call.safe_mode_locked and role == "agent" and len(call.connections.get("agent", set())) > 0:
+            # Already has an agent connected — block additional agent subscriptions
+            return False
+
+        return True
+
     async def trigger_safe_mode(self, call_id: str) -> Dict[str, Any]:
         """
         Step 1: Agent triggers Safe Mode.
@@ -58,17 +97,19 @@ class CallManager:
         - Sever agent audio stream
         - Impose Copilot blackout
         - Mark recording gap: "PCI segment withheld"
+        - Lock call from new participants (supervisor join prevention)
         - Connect Customer to Payment Voice Agent
         """
         call = self.get_call(call_id)
         if not call:
-            raise ValueError(f"Call {call_id} not found.")
+            call = self.create_call(call_id=call_id)
 
         call.safe_mode_active = True
         call.agent_isolated = True
         call.copilot_blackout = True
         call.recording_paused_pci = True
-        
+        call.safe_mode_locked = True  # Phase 2: Lock out supervisors
+
         timestamp = time.time()
         call.pci_timeline_markers.append({
             "type": "PCI_GAP_START",
@@ -76,10 +117,13 @@ class CallManager:
             "notice": "PCI audio withheld from recording"
         })
 
+        # Phase 2: Pause server-side recording
+        recording_service.pause_for_pci(call_id, session_id=None)
+
         audit_service.record_event(
             call_id=call_id,
             event_type="SAFE_MODE_START",
-            details="PCI Safe Mode triggered. Agent audio isolated and recording paused."
+            details="PCI Safe Mode triggered. Agent audio isolated, recording paused, supervisor join blocked."
         )
 
         # Notify Payment Service to launch payment session
@@ -131,16 +175,18 @@ class CallManager:
         - Reconnects Agent audio line
         - Restores Copilot
         - Resumes recording with timeline marker: 'PCI segment withheld, token ref tok_xxx'
+        - Unlocks supervisor join
         """
         call = self.get_call(call_id)
         if not call:
-            raise ValueError(f"Call {call_id} not found.")
+            call = self.create_call(call_id=call_id)
 
         call.safe_mode_active = False
         call.agent_isolated = False
         call.copilot_blackout = False
         call.recording_paused_pci = False
-        
+        call.safe_mode_locked = False  # Phase 2: Unlock supervisor join
+
         call.token_ref = token
         call.last4 = last4
         call.brand = brand
@@ -153,6 +199,17 @@ class CallManager:
             "last4": last4,
             "brand": brand,
             "notice": f"PCI segment withheld, token ref {token}"
+        })
+
+        # Phase 2: Resume server-side recording
+        recording_service.resume_after_pci(call_id, token_ref=token, last4=last4, brand=brand)
+
+        # Phase 2: Store recording metadata for leak scanning
+        audit_service.record_recording_metadata(call_id, {
+            "token_ref": token,
+            "last4": last4,
+            "brand": brand,
+            "pci_gap_end": timestamp,
         })
 
         audit_service.record_event(
@@ -183,12 +240,26 @@ class CallManager:
             "brand": brand
         }
 
+    def redact_transcript_text(self, text: str) -> str:
+        """
+        Phase 2: Redacts any PAN-like sequences from transcript text
+        before it reaches the copilot model or an outside provider.
+        """
+        cleaned, count = redact_transcript(text)
+        if count > 0:
+            audit_service.record_event(
+                call_id="system",
+                event_type="TRANSCRIPT_REDACTION",
+                details=f"Redacted {count} potential PAN sequence(s) from copilot transcript"
+            )
+        return cleaned
+
     async def broadcast_call_state(self, call_id: str, payload: Dict[str, Any]):
         """Broadcast state updates to all active websockets in this call room."""
         call = self.get_call(call_id)
         if not call:
             return
-        
+
         for role in ["agent", "customer"]:
             dead_sockets = set()
             for ws in call.connections[role]:
@@ -197,5 +268,6 @@ class CallManager:
                 except Exception:
                     dead_sockets.add(ws)
             call.connections[role].difference_update(dead_sockets)
+
 
 call_manager = CallManager()

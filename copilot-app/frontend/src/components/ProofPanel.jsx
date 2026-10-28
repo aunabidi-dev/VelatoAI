@@ -1,8 +1,14 @@
-import React, { useState } from 'react';
-import { ShieldCheck, Search, Database, Terminal, AlertCircle, FileCheck, CheckCircle2, Lock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ShieldCheck, Search, Database, Terminal, AlertCircle, FileCheck, CheckCircle2, Lock, RefreshCw } from 'lucide-react';
 
-export default function ProofPanel({ auditEvents, onRunLeakScan, scanResults }) {
+export default function ProofPanel({ auditEvents, onRunLeakScan, scanResults, onRefreshAudit }) {
   const [isScanning, setIsScanning] = useState(false);
+
+  useEffect(() => {
+    if (onRefreshAudit) {
+      onRefreshAudit();
+    }
+  }, []);
 
   const handleScan = async () => {
     setIsScanning(true);
@@ -96,7 +102,19 @@ export default function ProofPanel({ auditEvents, onRunLeakScan, scanResults }) 
               Append-Only Security Audit Trail
             </h3>
           </div>
-          <span className="text-[10px] font-mono text-slate-400">Cryptographically verifiable events</span>
+          <div className="flex items-center gap-3">
+            {onRefreshAudit && (
+              <button
+                onClick={onRefreshAudit}
+                className="text-[11px] font-mono text-cyan-400 hover:text-cyan-300 flex items-center gap-1.5 transition-colors px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800 hover:border-slate-700 active:scale-95"
+                title="Refresh Audit Trail"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Refresh</span>
+              </button>
+            )}
+            <span className="text-[10px] font-mono text-slate-400">Cryptographically verifiable events</span>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -112,7 +130,7 @@ export default function ProofPanel({ auditEvents, onRunLeakScan, scanResults }) 
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {auditEvents && auditEvents.length > 0 ? (
-                auditEvents.map((evt, idx) => (
+                [...auditEvents].reverse().map((evt, idx) => (
                   <tr key={idx} className="hover:bg-slate-900/40">
                     <td className="py-2.5 px-3 text-slate-400">{evt.id}</td>
                     <td className="py-2.5 px-3 text-cyan-300 font-bold">{evt.event_type}</td>

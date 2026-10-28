@@ -55,8 +55,8 @@ export default function App() {
     fetchAudit();
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Connect directly to port 8000 or via proxy
-    const wsUrl = `${protocol}//localhost:8000/ws/call/${callState.call_id}/agent`;
+    // Connect through proxy or direct host
+    const wsUrl = `${protocol}//${window.location.host}/ws/call/${callState.call_id}/agent`;
     
     let ws;
     try {
@@ -124,6 +124,13 @@ export default function App() {
       if (ws) ws.close();
     };
   }, [callState.call_id]);
+
+  // Fetch audit trail when navigating to proof panel
+  useEffect(() => {
+    if (viewMode === 'proof') {
+      fetchAudit();
+    }
+  }, [viewMode]);
 
   // 1. Agent triggers PCI Safe Mode
   const handleTriggerSafeMode = async () => {
@@ -213,6 +220,13 @@ export default function App() {
         body: JSON.stringify({ spoken_text: expText })
       });
       const data = await res.json();
+      if (data.valid === false) {
+        setPaymentSession(prev => ({
+          ...prev,
+          prompt: data.prompt || "Please state the expiration month and year again, for example 12 28."
+        }));
+        return;
+      }
       setPaymentSession(prev => ({
         ...prev,
         state: "CAPTURING_CVV",
@@ -238,6 +252,13 @@ export default function App() {
         body: JSON.stringify({ spoken_text: cvvText })
       });
       const data = await res.json();
+      if (data.valid === false) {
+        setPaymentSession(prev => ({
+          ...prev,
+          prompt: data.prompt || "Please repeat the 3 or 4-digit security code on your card."
+        }));
+        return;
+      }
       setPaymentSession(prev => ({
         ...prev,
         state: "CONFIRMING",
@@ -331,8 +352,13 @@ export default function App() {
   const handleRunLeakScan = async () => {
     try {
       const res = await fetch('/api/audit/leak-scan');
-      const data = await res.json();
-      setScanResults(data);
+      if (res.ok) {
+        const data = await res.json();
+        setScanResults(data);
+      } else {
+        throw new Error("Audit scan response not ok");
+      }
+      fetchAudit();
     } catch (e) {
       setScanResults({
         total_records_checked: auditEvents.length || 6,
@@ -377,8 +403,8 @@ export default function App() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-extrabold tracking-tight text-slate-100">ZytaSafe</h1>
-              <span className="text-[10px] font-mono uppercase bg-cyan-950 text-cyan-300 border border-cyan-800/80 px-2 py-0.5 rounded-full font-semibold">
-                Phase 1 Walking Skeleton
+              <span className="text-[10px] font-mono uppercase bg-emerald-950 text-emerald-300 border border-emerald-800/80 px-2 py-0.5 rounded-full font-semibold">
+                Phase 2 Zero-Trust Hardened
               </span>
               <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full flex items-center gap-1 border ${wsConnected ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40' : 'bg-slate-900 text-slate-500 border-slate-800'}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`}></span>
@@ -495,6 +521,7 @@ export default function App() {
             auditEvents={auditEvents}
             onRunLeakScan={handleRunLeakScan}
             scanResults={scanResults}
+            onRefreshAudit={fetchAudit}
           />
         )}
       </main>

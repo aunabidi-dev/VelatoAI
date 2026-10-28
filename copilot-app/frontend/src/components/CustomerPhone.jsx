@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Phone, PhoneCall, Volume2, Mic, MicOff, Check, RotateCcw, AlertTriangle, ShieldCheck, Sparkles, Send, Radio, Wrench } from 'lucide-react';
+import { Phone, PhoneCall, Volume2, Mic, MicOff, Check, RotateCcw, AlertTriangle, ShieldCheck, Sparkles, Send, Radio, Wrench, Bell } from 'lucide-react';
 import { soundFx } from './AudioSynthesizer';
 
 const WORD_MAP = {
@@ -12,38 +12,64 @@ const WORD_MAP = {
   six: '6',
   seven: '7',
   eight: '8', ate: '8',
-  nine: '9'
+  nine: '9',
+  ten: '10', eleven: '11', twelve: '12', thirteen: '13', fourteen: '14',
+  fifteen: '15', sixteen: '16', seventeen: '17', eighteen: '18', nineteen: '19'
+};
+
+const TENS_MAP = {
+  twenty: 20, thirty: 30, forty: 40, fifty: 50,
+  sixty: 60, seventy: 70, eighty: 80, ninety: 90
+};
+
+const ONES_VAL = {
+  one: 1, two: 2, three: 3, four: 4, five: 5,
+  six: 6, seven: 7, eight: 8, nine: 9
 };
 
 function formatSpokenToDigits(text) {
   if (!text) return '';
-  const tokens = text.toLowerCase().replace(/[-,\.]/g, ' ').split(/\s+/);
+  const cleanText = text.toLowerCase().replace(/[-,\.]/g, ' ');
+  const tokens = cleanText.split(/\s+/).filter(Boolean);
   let res = '';
-  for (let i = 0; i < tokens.length; i++) {
+  let i = 0;
+  while (i < tokens.length) {
     const t = tokens[i];
-    if (t === 'double' && i + 1 < tokens.length) {
+
+    // Multipliers: double / triple
+    if ((t === 'double' || t === 'triple') && i + 1 < tokens.length) {
+      const mult = t === 'double' ? 2 : 3;
       const next = tokens[i + 1];
       const digit = WORD_MAP[next] || (next.match(/^\d$/) ? next : '');
       if (digit) {
-        res += digit.repeat(2);
-        i++;
+        res += digit[0].repeat(mult);
+        i += 2;
         continue;
       }
     }
-    if (t === 'triple' && i + 1 < tokens.length) {
-      const next = tokens[i + 1];
-      const digit = WORD_MAP[next] || (next.match(/^\d$/) ? next : '');
-      if (digit) {
-        res += digit.repeat(3);
-        i++;
+
+    // Compound numbers: "forty two" -> 42
+    if (TENS_MAP[t]) {
+      if (i + 1 < tokens.length && ONES_VAL[tokens[i + 1]]) {
+        res += String(TENS_MAP[t] + ONES_VAL[tokens[i + 1]]);
+        i += 2;
+        continue;
+      } else {
+        res += String(TENS_MAP[t]);
+        i += 1;
         continue;
       }
     }
+
     if (WORD_MAP[t]) {
       res += WORD_MAP[t];
     } else if (/^\d+$/.test(t)) {
       res += t;
+    } else {
+      const match = t.match(/\d/g);
+      if (match) res += match.join('');
     }
+    i++;
   }
   return res || text;
 }
@@ -156,23 +182,45 @@ export default function CustomerPhone({
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
   const autoSubmitTimerRef = useRef(null);
+  const sessionRef = useRef(paymentSessionData);
+  const shouldListenRef = useRef(false);
 
-  // Text-to-Speech (TTS) voice agent reader
+  // Keep live reference to current payment session state for callbacks
   useEffect(() => {
-    if (safeModeActive && paymentSessionData?.prompt && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(paymentSessionData.prompt);
-      utterance.rate = 1.02;
-      utterance.pitch = 1.0;
-      window.speechSynthesis.speak(utterance);
+    sessionRef.current = paymentSessionData;
+  }, [paymentSessionData]);
+
+  // Clean state whenever payment state transitions (PAN -> EXPIRY -> CVV -> CONFIRMING)
+  useEffect(() => {
+    setCustomInput('');
+    shouldListenRef.current = false;
+    if (autoSubmitTimerRef.current) {
+      clearTimeout(autoSubmitTimerRef.current);
+      autoSubmitTimerRef.current = null;
     }
-  }, [paymentSessionData?.prompt, safeModeActive]);
+    if (recognitionRef.current) {
+      recognitionRef.current.onresult = null;
+      recognitionRef.current.onend = null;
+      recognitionRef.current.onerror = null;
+      try { recognitionRef.current.abort(); } catch (e) {}
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+  }, [paymentSessionData?.state]);
+
+  // Play audible Safe Mode transition tone when entering Safe Mode
+  useEffect(() => {
+    if (safeModeActive) {
+      soundFx.playSafeModeBeep();
+    }
+  }, [safeModeActive]);
 
   // Clean up speech recognition on unmount
   useEffect(() => {
     return () => {
+      shouldListenRef.current = false;
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
+        try { recognitionRef.current.stop(); } catch (e) {}
       }
       if (autoSubmitTimerRef.current) {
         clearTimeout(autoSubmitTimerRef.current);
@@ -180,29 +228,55 @@ export default function CustomerPhone({
     };
   }, []);
 
-  // Web Speech API Continuous Microphone listener
-  const toggleMicrophone = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert("Microphone Speech Recognition is not supported by this browser. Please use Chrome or Edge, or type in the box.");
-      return;
-    }
+  // Text-to-Speech (TTS) voice agent reader
+  useEffect(() => {
+    if (safeModeActive && paymentSessionData?.prompt && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
 
-    if (isListening) {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
+      // Temporarily pause speech recognition while the AI speaks to avoid hearing itself
+      if (recognitionRef.current && isListening) {
+        try { recognitionRef.current.stop(); } catch (e) {}
       }
-      setIsListening(false);
-      return;
-    }
 
-    // Reset input on fresh voice session
-    setCustomInput('');
+      const utterance = new SpeechSynthesisUtterance(paymentSessionData.prompt);
+      utterance.rate = 1.02;
+      utterance.pitch = 1.0;
+
+      utterance.onend = () => {
+        // When AI finishes reading the prompt:
+        // 1. Play the "after the tone" beep if prompt requests it
+        if (paymentSessionData?.state === "CAPTURING_PAN") {
+          setTimeout(() => {
+            soundFx.playPromptTone();
+          }, 150);
+        }
+
+        // 2. Automatically activate listening for customer's speech
+        setTimeout(() => {
+          if (sessionRef.current?.state !== "COMPLETED") {
+            startRecognition();
+          }
+        }, 350);
+      };
+
+      window.speechSynthesis.speak(utterance);
+    }
+  }, [paymentSessionData?.prompt, safeModeActive]);
+
+  // Safe starter for speech recognition
+  const startRecognition = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    shouldListenRef.current = true;
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (e) {}
+    }
 
     try {
       const recognition = new SpeechRecognition();
       recognitionRef.current = recognition;
-      recognition.continuous = true;
+      recognition.continuous = true; // Crucial: Stays open across pauses when speaking digits in groups of four!
       recognition.interimResults = true;
       recognition.lang = 'en-US';
 
@@ -211,91 +285,176 @@ export default function CustomerPhone({
       };
 
       recognition.onend = () => {
-        setIsListening(false);
+        // Auto-restart if silence timeout occurs while user is still speaking this turn
+        if (shouldListenRef.current && sessionRef.current?.state !== "COMPLETED") {
+          try {
+            recognition.start();
+          } catch (e) {
+            setIsListening(false);
+          }
+        } else {
+          setIsListening(false);
+        }
       };
 
       recognition.onerror = (e) => {
-        console.warn("Speech recognition error:", e.error);
-        setIsListening(false);
+        console.warn("[SpeechRecognition] error:", e.error);
+        if (e.error !== 'no-speech' && e.error !== 'aborted') {
+          setIsListening(false);
+        }
       };
 
       recognition.onresult = (event) => {
-        let fullTranscript = '';
+        let transcript = '';
         for (let i = 0; i < event.results.length; i++) {
-          fullTranscript += event.results[i][0].transcript + ' ';
+          transcript += event.results[i][0].transcript + ' ';
         }
-        const trimmed = fullTranscript.trim();
+        const trimmed = transcript.trim();
+        const currentState = sessionRef.current?.state;
 
-        if (paymentSessionData?.state === "CAPTURING_PAN") {
+        if (currentState === "CAPTURING_PAN") {
           const formatted = formatSpokenToDigits(trimmed);
           const digitsOnly = formatted.replace(/\D/g, '');
           setCustomInput(formatted);
 
+          // Once all 16 digits are heard (e.g., across all 4-digit groups), submit!
           if (digitsOnly.length >= 16) {
             if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
             autoSubmitTimerRef.current = setTimeout(() => {
-              // Submit user's exact spoken digits without altering them!
-              handleCustomSubmit(digitsOnly);
-              if (recognitionRef.current) recognitionRef.current.stop();
+              shouldListenRef.current = false;
+              if (recognitionRef.current) {
+                recognitionRef.current.onresult = null;
+                try { recognitionRef.current.abort(); } catch (e) {}
+                recognitionRef.current = null;
+              }
+              handleCustomSubmit(digitsOnly.slice(0, 16));
             }, 600);
           }
-        } else if (paymentSessionData?.state === "CAPTURING_EXPIRY") {
+        } else if (currentState === "CAPTURING_EXPIRY") {
           const parsed = parseExpiryInput(trimmed);
-          // Immediately format as MM/YY (e.g. 09/28) in the input box so it never stays as raw 0928
           setCustomInput(parsed && parsed.includes('/') ? parsed : trimmed);
 
           if (parsed && parsed.includes('/')) {
             if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
             autoSubmitTimerRef.current = setTimeout(() => {
+              shouldListenRef.current = false;
+              if (recognitionRef.current) {
+                recognitionRef.current.onresult = null;
+                try { recognitionRef.current.abort(); } catch (e) {}
+                recognitionRef.current = null;
+              }
               handleCustomSubmit(parsed);
-              if (recognitionRef.current) recognitionRef.current.stop();
-            }, 700);
+            }, 600);
           }
-        } else if (paymentSessionData?.state === "CAPTURING_CVV") {
+        } else if (currentState === "CAPTURING_CVV") {
           const formatted = formatSpokenToDigits(trimmed);
           const cvvDigits = formatted.replace(/\D/g, '');
           setCustomInput(cvvDigits);
-          if (cvvDigits.length >= 3) {
+
+          const expectedLen = sessionRef.current?.brand === "American Express" ? 4 : 3;
+          if (cvvDigits.length === expectedLen) {
             if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
             autoSubmitTimerRef.current = setTimeout(() => {
-              handleCustomSubmit(cvvDigits.slice(0, 4));
-              if (recognitionRef.current) recognitionRef.current.stop();
-            }, 600);
+              shouldListenRef.current = false;
+              if (recognitionRef.current) {
+                recognitionRef.current.onresult = null;
+                try { recognitionRef.current.abort(); } catch (e) {}
+                recognitionRef.current = null;
+              }
+              handleCustomSubmit(cvvDigits);
+            }, 500);
           }
-        } else if (paymentSessionData?.state === "CONFIRMING") {
-          if (trimmed.toLowerCase().includes('yes') || trimmed.toLowerCase().includes('confirm')) {
+        } else if (currentState === "CONFIRMING") {
+          setCustomInput(trimmed);
+          const isYes = /\b(yes|yeah|yep|confirm|confirmed|correct|sure|right|ok|okay|sounds good|it is|affirmative)\b/i.test(trimmed);
+          const isNo = /\b(no|nope|wrong|incorrect|cancel|restart|stop)\b/i.test(trimmed);
+
+          if (isYes) {
+            shouldListenRef.current = false;
+            if (recognitionRef.current) {
+              recognitionRef.current.onresult = null;
+              try { recognitionRef.current.abort(); } catch (e) {}
+              recognitionRef.current = null;
+            }
+            setIsListening(false);
+            soundFx.playTokenSuccessChime();
             onConfirmPayment(true);
-            if (recognitionRef.current) recognitionRef.current.stop();
+          } else if (isNo) {
+            shouldListenRef.current = false;
+            if (recognitionRef.current) {
+              recognitionRef.current.onresult = null;
+              try { recognitionRef.current.abort(); } catch (e) {}
+              recognitionRef.current = null;
+            }
+            setIsListening(false);
+            onConfirmPayment(false);
           }
         }
       };
 
       recognition.start();
     } catch (e) {
-      console.error("Speech recognition start failed", e);
+      console.warn("[SpeechRecognition] start exception:", e);
       setIsListening(false);
     }
+  };
+
+  // Toggle button for manual microphone click
+  const toggleMicrophone = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Microphone Speech Recognition is not supported by this browser. Please use Chrome or Edge, or type in the box.");
+      return;
+    }
+
+    if (isListening) {
+      shouldListenRef.current = false;
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (e) {}
+      }
+      setIsListening(false);
+      return;
+    }
+
+    setCustomInput('');
+    startRecognition();
   };
 
   const handleCustomSubmit = (overrideText = null) => {
     const textToSend = overrideText || customInput;
     if (!textToSend.trim()) return;
 
+    shouldListenRef.current = false;
     if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
-    if (isListening && recognitionRef.current) {
-      recognitionRef.current.stop();
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (e) {}
       setIsListening(false);
     }
 
-    if (paymentSessionData?.state === "CAPTURING_PAN") {
+    const currentState = sessionRef.current?.state;
+
+    if (currentState === "CAPTURING_PAN") {
       const digitsOnly = textToSend.replace(/\D/g, '');
       onSendPan(digitsOnly);
-    } else if (paymentSessionData?.state === "CAPTURING_EXPIRY") {
+    } else if (currentState === "CAPTURING_EXPIRY") {
       const parsedExp = parseExpiryInput(textToSend);
       onSendExpiry(parsedExp);
-    } else if (paymentSessionData?.state === "CAPTURING_CVV") {
+    } else if (currentState === "CAPTURING_CVV") {
       const cvvDigits = textToSend.replace(/\D/g, '');
       onSendCvv(cvvDigits || textToSend);
+    } else if (currentState === "CONFIRMING") {
+      const isYes = /\b(yes|yeah|yep|confirm|confirmed|correct|sure|right|ok|okay|affirmative)\b/i.test(textToSend);
+      const isNo = /\b(no|nope|wrong|incorrect|cancel|restart)\b/i.test(textToSend);
+      if (isYes) {
+        soundFx.playTokenSuccessChime();
+        onConfirmPayment(true);
+      } else if (isNo) {
+        onConfirmPayment(false);
+      } else {
+        // Default to confirm if typed in confirmation state
+        soundFx.playTokenSuccessChime();
+        onConfirmPayment(true);
+      }
     }
     setCustomInput('');
   };
@@ -321,9 +480,21 @@ export default function CustomerPhone({
             </div>
           </div>
         </div>
-        <span className="text-[10px] font-mono bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-slate-400">
-          Caller: Jane Doe
-        </span>
+
+        <div className="flex items-center gap-2">
+          {/* Quick test beep button */}
+          <button
+            onClick={() => soundFx.playSafeModeBeep()}
+            title="Test Beep Sound"
+            className="p-1 rounded bg-slate-900 border border-slate-700 text-slate-400 hover:text-cyan-400 text-[10px] flex items-center gap-1"
+          >
+            <Bell className="w-3 h-3" />
+            <span>Beep</span>
+          </button>
+          <span className="text-[10px] font-mono bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-slate-400">
+            Caller: Jane Doe
+          </span>
+        </div>
       </div>
 
       {/* Voice Visualizer */}
@@ -338,7 +509,11 @@ export default function CustomerPhone({
         <span className="text-[11px] text-slate-400 font-mono flex items-center gap-1.5">
           <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
           {isListening ? (
-            <span className="text-rose-400 font-semibold animate-pulse">Microphone Active • Listening...</span>
+            <span className="text-rose-400 font-semibold animate-pulse">
+              {paymentSessionData?.state === "CONFIRMING"
+                ? "Microphone Active • Say 'Yes' or 'No'"
+                : "Microphone Active • Listening..."}
+            </span>
           ) : safeModeActive ? (
             "AI Voice Agent Active (Audio Isolated)"
           ) : (
@@ -369,8 +544,8 @@ export default function CustomerPhone({
             </div>
           )}
 
-          {/* PROMINENT SPEAK BUTTON & INPUT CONTROLS */}
-          {paymentSessionData?.state !== "CONFIRMING" && paymentSessionData?.state !== "COMPLETED" && (
+          {/* PROMINENT SPEAK BUTTON & INPUT CONTROLS (Active across all capture states, including CONFIRMING) */}
+          {paymentSessionData?.state !== "COMPLETED" && (
             <div className="flex flex-col gap-2.5 bg-slate-900/70 border border-slate-800 p-3.5 rounded-xl">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-mono text-slate-300 font-bold flex items-center gap-1.5">
@@ -397,7 +572,11 @@ export default function CustomerPhone({
                 {isListening ? (
                   <>
                     <MicOff className="w-4 h-4" />
-                    <span>Listening... Speak now</span>
+                    <span>
+                      {paymentSessionData?.state === "CONFIRMING"
+                        ? "Listening... Say 'Yes' or 'No'"
+                        : "Listening... Speak now"}
+                    </span>
                   </>
                 ) : (
                   <>
@@ -407,7 +586,9 @@ export default function CustomerPhone({
                         ? "Click to Speak Card Number"
                         : paymentSessionData?.state === "CAPTURING_EXPIRY"
                         ? "Click to Speak Expiry (e.g. December 2028)"
-                        : "Click to Speak CVV (e.g. 1 2 3)"}
+                        : paymentSessionData?.state === "CAPTURING_CVV"
+                        ? "Click to Speak CVV (e.g. 1 2 3)"
+                        : "Click to Speak (Say 'Yes' to Confirm)"}
                     </span>
                   </>
                 )}
@@ -425,7 +606,9 @@ export default function CustomerPhone({
                       ? "Speak or type 16-digit card..."
                       : paymentSessionData?.state === "CAPTURING_EXPIRY"
                       ? "Say or type: December 2028 or 12/28..."
-                      : "Say or type: 1 2 3..."
+                      : paymentSessionData?.state === "CAPTURING_CVV"
+                      ? "Say or type: 1 2 3..."
+                      : "Say or type: Yes..."
                   }
                   className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
                 />
@@ -534,6 +717,9 @@ export default function CustomerPhone({
             <div className="flex flex-col gap-3">
               <div className="bg-amber-950/30 border border-amber-500/40 p-3 rounded-lg text-xs text-amber-200">
                 🔒 Zero-Trust Confirmation: The AI speaks and shows <strong>ONLY</strong> the last 4 digits ({paymentSessionData?.last4 || "----"}) and expiry ({paymentSessionData?.expiry || "--/--"}).
+                <span className="block mt-1 text-emerald-300 font-semibold">
+                  🎙️ Speak "Yes" into your microphone or click the button below to complete.
+                </span>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <button
@@ -551,22 +737,24 @@ export default function CustomerPhone({
                   className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium p-2.5 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-all"
                 >
                   <RotateCcw className="w-4 h-4" />
-                  <span>"No, Change"</span>
+                  <span>"No, Restart"</span>
                 </button>
               </div>
             </div>
           )}
-        </div>
-      )}
 
-      {/* Completed State */}
-      {paymentCompleted && (
-        <div className="bg-emerald-950/30 border border-emerald-500/40 p-4 rounded-xl flex flex-col items-center justify-center text-center gap-2">
-          <ShieldCheck className="w-8 h-8 text-emerald-400" />
-          <div className="text-sm font-bold text-emerald-300">Payment Processed Safely</div>
-          <p className="text-xs text-emerald-400/80">
-            Card details tokenized and memory wiped. Reconnected with human agent.
-          </p>
+          {/* Completion Success HUD */}
+          {paymentCompleted && (
+            <div className="bg-emerald-950/30 border border-emerald-500/40 p-4 rounded-xl flex flex-col items-center justify-center text-center gap-2">
+              <ShieldCheck className="w-8 h-8 text-emerald-400" />
+              <div className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
+                Payment Authorized & Tokenized
+              </div>
+              <p className="text-[11px] text-emerald-400/80">
+                Your card has been safely tokenized. Returning to your agent now.
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>
