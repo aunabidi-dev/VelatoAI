@@ -192,6 +192,31 @@ export default function App() {
     }
   };
 
+  // Agent cancels PCI Safe Mode & returns to normal call
+  const handleCancelSafeMode = async () => {
+    try {
+      await fetch(`/api/calls/${callState.call_id}/safe-mode/cancel`, {
+        method: 'POST'
+      });
+    } catch (e) {}
+    setCallState(prev => ({
+      ...prev,
+      agent_isolated: false,
+      safe_mode_active: false,
+      recording_paused_pci: false
+    }));
+    setCopilotBlackout(false);
+    setPaymentSession({
+      session_id: null,
+      state: "IDLE",
+      prompt: "",
+      brand: null,
+      last4: null,
+      expiry: null
+    });
+    fetchAudit();
+  };
+
   // 2. Customer speaks PAN
   const handleSendPan = async (panText) => {
     const rawDigits = panText.replace(/\D/g, '');
@@ -389,9 +414,12 @@ export default function App() {
   };
 
   // Reset demo
-  const handleReset = () => {
+  const handleReset = async () => {
+    try {
+      await fetch(`/api/calls/${callState.call_id}/reset`, { method: 'POST' });
+    } catch (e) {}
     setCallState({
-      call_id: `call_${Math.random().toString(16).substring(2, 8)}`,
+      call_id: "call_meta_hackathon_01",
       customer_name: "Jane Doe",
       agent_isolated: false,
       safe_mode_active: false,
@@ -502,6 +530,7 @@ export default function App() {
               <AgentDesktop
                 callState={callState}
                 onTriggerSafeMode={handleTriggerSafeMode}
+                onCancelSafeMode={handleCancelSafeMode}
                 copilotSuggestion={copilotSuggestion}
                 copilotBlackout={copilotBlackout}
                 paymentResult={paymentResult}

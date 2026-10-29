@@ -240,6 +240,60 @@ class CallManager:
             "brand": brand
         }
 
+    async def cancel_safe_mode(self, call_id: str):
+        """Cancel safe mode and resume normal conversation without payment token."""
+        call = self.get_call(call_id)
+        if not call:
+            call = self.create_call(call_id=call_id)
+
+        call.safe_mode_active = False
+        call.agent_isolated = False
+        call.copilot_blackout = False
+        call.recording_paused_pci = False
+        call.safe_mode_locked = False
+        call.payment_session_id = None
+
+        audit_service.record_event(
+            call_id=call_id,
+            event_type="SAFE_MODE_CANCELLED",
+            details="PCI Safe Mode cancelled. Agent line reconnected, normal call resumed."
+        )
+
+        await self.broadcast_call_state(call_id, {
+            "type": "SAFE_MODE_STATE",
+            "safe_mode_active": False,
+            "agent_isolated": False,
+            "copilot_blackout": False,
+            "recording_status": "NORMAL",
+            "payment_session_id": None,
+            "initial_data": None
+        })
+
+        return {
+            "call_id": call_id,
+            "status": "NORMAL",
+            "safe_mode_active": False,
+            "agent_isolated": False
+        }
+
+    def reset_call(self, call_id: str):
+        """Reset a call back to a clean initial conversation state."""
+        call = self.get_call(call_id)
+        if call:
+            call.safe_mode_active = False
+            call.agent_isolated = False
+            call.copilot_blackout = False
+            call.recording_paused_pci = False
+            call.safe_mode_locked = False
+            call.payment_session_id = None
+            call.token_ref = None
+            call.last4 = None
+            call.brand = None
+            call.pci_timeline_markers = []
+        else:
+            call = self.create_call(call_id=call_id)
+        return call
+
     def redact_transcript_text(self, text: str) -> str:
         """
         Phase 2: Redacts any PAN-like sequences from transcript text

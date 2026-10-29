@@ -155,6 +155,27 @@ async def complete_safe_mode(call_id: str, req: SafeModeCompleteRequest):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.post("/api/calls/{call_id}/safe-mode/cancel")
+async def cancel_safe_mode_endpoint(call_id: str):
+    res = await call_manager.cancel_safe_mode(call_id)
+    return res
+
+
+@app.post("/api/calls/{call_id}/reset")
+async def reset_call_endpoint(call_id: str):
+    call = call_manager.reset_call(call_id)
+    await call_manager.broadcast_call_state(call_id, {
+        "type": "SAFE_MODE_STATE",
+        "safe_mode_active": False,
+        "agent_isolated": False,
+        "copilot_blackout": False,
+        "recording_status": "NORMAL",
+        "payment_session_id": None,
+        "initial_data": None
+    })
+    return {"call_id": call_id, "status": "RESET", "safe_mode_active": False}
+
+
 # ── Phase 3: Document Management (admin-only) ──────────────────────────────────
 
 @app.post("/api/documents", status_code=201)
