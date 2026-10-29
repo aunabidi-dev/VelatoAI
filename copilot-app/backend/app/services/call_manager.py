@@ -270,4 +270,21 @@ class CallManager:
             call.connections[role].difference_update(dead_sockets)
 
 
+
+    async def broadcast_to_role(self, call_id: str, role: str, payload: dict):
+        """
+        Phase 3: Broadcast a message to all WebSocket connections for a specific role only.
+        Used to send COPILOT_SUGGESTION messages to the agent channel without notifying customer.
+        """
+        call = self.get_call(call_id)
+        if not call:
+            return
+        dead_sockets = set()
+        for ws in call.connections.get(role, set()):
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                dead_sockets.add(ws)
+        call.connections[role].difference_update(dead_sockets)
+
 call_manager = CallManager()

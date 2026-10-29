@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Sparkles, Phone, Eye, RefreshCw, CheckCircle, ExternalLink } from 'lucide-react';
+import { Shield, Sparkles, Phone, Eye, RefreshCw, CheckCircle, ExternalLink, BookOpen } from 'lucide-react';
 import AgentDesktop from './components/AgentDesktop';
 import CustomerPhone from './components/CustomerPhone';
 import ProofPanel from './components/ProofPanel';
+import AdminPanel from './components/AdminPanel';
 
 export default function App() {
-  const [viewMode, setViewMode] = useState('split'); // 'split', 'agent', 'customer', 'proof'
+  const [viewMode, setViewMode] = useState('split'); // 'split', 'agent', 'customer', 'admin', 'proof'
+  const [agentRole, setAgentRole] = useState('agent'); // 'agent' | 'admin'
   
   // Call & Safe Mode state
   const [callState, setCallState] = useState({
@@ -71,7 +73,25 @@ export default function App() {
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (msg.type === "SAFE_MODE_STATE") {
+          if (msg.type === "INIT_STATE") {
+            setCallState(prev => ({
+              ...prev,
+              safe_mode_active: !!msg.safe_mode_active,
+              agent_isolated: !!msg.agent_isolated,
+              copilot_blackout: !!msg.safe_mode_active,
+              token_ref: msg.token_ref || null,
+              last4: msg.last4 || null,
+              brand: msg.brand || null,
+            }));
+            setCopilotBlackout(!!msg.safe_mode_active);
+            if (msg.token_ref) {
+              setPaymentResult({
+                token: msg.token_ref,
+                brand: msg.brand,
+                last4: msg.last4
+              });
+            }
+          } else if (msg.type === "SAFE_MODE_STATE") {
             setCallState(prev => ({
               ...prev,
               safe_mode_active: msg.safe_mode_active,
@@ -404,13 +424,22 @@ export default function App() {
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-extrabold tracking-tight text-slate-100">ZytaSafe</h1>
               <span className="text-[10px] font-mono uppercase bg-emerald-950 text-emerald-300 border border-emerald-800/80 px-2 py-0.5 rounded-full font-semibold">
-                Phase 2 Zero-Trust Hardened
+                Phase 3 Live Copilot
               </span>
               <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full flex items-center gap-1 border ${wsConnected ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40' : 'bg-slate-900 text-slate-500 border-slate-800'}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`}></span>
                 {wsConnected ? 'WS Live' : 'WS Connecting'}
               </span>
             </div>
+            <select
+              value={agentRole}
+              onChange={e => setAgentRole(e.target.value)}
+              className="text-[10px] font-mono bg-slate-900 border border-slate-700 text-slate-300 px-2 py-0.5 rounded-md focus:outline-none cursor-pointer"
+              title="Switch role"
+            >
+              <option value="agent">Agent</option>
+              <option value="admin">Admin</option>
+            </select>
             <p className="text-xs text-slate-400">
               Zero-Trust PCI Voice Intercept & Live Support Copilot · Meta Global AI Developer Hackathon
             </p>
@@ -436,6 +465,12 @@ export default function App() {
             className={`px-3 py-1.5 rounded-lg font-medium transition-all ${viewMode === 'customer' ? 'bg-cyan-500 text-slate-950 font-bold shadow' : 'text-slate-400 hover:text-slate-200'}`}
           >
             Customer Phone
+          </button>
+          <button
+            onClick={() => setViewMode('admin')}
+            className={`px-3 py-1.5 rounded-lg font-medium transition-all ${viewMode === 'admin' ? 'bg-indigo-500 text-slate-950 font-bold shadow' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Admin Docs
           </button>
           <button
             onClick={() => setViewMode('proof')}
@@ -471,6 +506,7 @@ export default function App() {
                 copilotBlackout={copilotBlackout}
                 paymentResult={paymentResult}
                 auditMarkers={callState.timeline_markers}
+                wsRef={wsRef}
               />
             </div>
 
@@ -501,6 +537,7 @@ export default function App() {
             copilotBlackout={copilotBlackout}
             paymentResult={paymentResult}
             auditMarkers={callState.timeline_markers}
+            wsRef={wsRef}
           />
         )}
 
@@ -516,7 +553,10 @@ export default function App() {
           />
         )}
 
-        {viewMode === 'proof' && (
+                {viewMode === 'admin' && (
+          <AdminPanel agentRole={agentRole} />
+        )}
+{viewMode === 'proof' && (
           <ProofPanel
             auditEvents={auditEvents}
             onRunLeakScan={handleRunLeakScan}
