@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Shield, ShieldAlert, ShieldCheck, Mic, MicOff, Lock, AlertCircle,
-  FileText, Bot, CheckCircle2, MessageSquare, Zap, ChevronRight, Send, Sparkles
+  FileText, Bot, CheckCircle2, MessageSquare, Zap, ChevronRight, Send, Sparkles, RotateCcw
 } from 'lucide-react';
 import { soundFx } from './AudioSynthesizer';
 
@@ -18,6 +18,7 @@ import { soundFx } from './AudioSynthesizer';
 export default function AgentDesktop({
   callState,
   onTriggerSafeMode,
+  onCancelSafeMode,
   copilotSuggestion,
   copilotBlackout,
   paymentResult,
@@ -236,6 +237,17 @@ export default function AgentDesktop({
                 <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
                 <span>Customer is speaking card credentials to Voice AI...</span>
               </div>
+
+              {onCancelSafeMode && (
+                <button
+                  type="button"
+                  onClick={onCancelSafeMode}
+                  className="mt-3 text-xs text-rose-300 hover:text-white bg-rose-950/70 hover:bg-rose-900/90 border border-rose-600/60 px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 shadow"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Cancel Safe Mode (Return to Normal Call)</span>
+                </button>
+              )}
             </div>
           ) : paymentResult ? (
             /* Post-Payment Tokenized HUD */
