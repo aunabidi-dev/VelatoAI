@@ -1,5 +1,5 @@
 """
-Copilot App - Control Plane API — Phase 2 Hardened
+Copilot App - Control Plane API — Phase 3: Live Copilot
 Manages Agent Desktop, Customer signaling, Live Copilot, Audit Trail, and Safe Mode routing.
 
 Phase 2 additions:
@@ -7,8 +7,15 @@ Phase 2 additions:
   - Transcript redaction before copilot model
   - Recording timeline endpoint
   - Supervisor join prevention on WebSocket
+
+Phase 3 additions:
+  - Admin document upload / list / delete (role-gated)
+  - Structured copilot suggestion endpoint backed by document retrieval
+  - Provider interface (local by default, external off by default)
+  - Live transcript ingestion endpoint
+  - WebSocket broadcasts COPILOT_SUGGESTION messages to agent channel
 """
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
@@ -16,12 +23,23 @@ import uuid
 import json
 import logging
 
-from .models.schemas import CallSessionCreate, SafeModeStartRequest, SafeModeCompleteRequest
+from .models.schemas import (
+    CallSessionCreate,
+    SafeModeStartRequest,
+    SafeModeCompleteRequest,
+    DocumentUploadRequest,
+    DocumentDeleteResponse,
+    CopilotSuggestionRequest,
+    CopilotSuggestionResponse,
+    TranscriptChunk,
+)
 from .services.call_manager import call_manager
 from .services.audit_service import audit_service
 from .services.recording_service import recording_service
 from .services.redaction_filter import redact_transcript
 from .services.log_redaction import install_log_redaction
+from .services.copilot_service import copilot_service
+from .services.provider import copilot_provider
 
 # Phase 2: Install PCI log redaction filter on ALL loggers at startup
 install_log_redaction()  # Root logger
@@ -34,8 +52,8 @@ logger = logging.getLogger("copilot-app")
 
 app = FastAPI(
     title="Zero-Trust PCI Voice Intercept - Control Plane",
-    description="Control Plane managing Agent Desktop, Live Copilot, and PCI Isolation (Phase 2 Hardened)",
-    version="2.0.0"
+    description="Control Plane managing Agent Desktop, Live Copilot, and PCI Isolation (Phase 3 Copilot)",
+    version="3.0.0"
 )
 
 app.add_middleware(
@@ -46,9 +64,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class CopilotQuery(BaseModel):
-    call_id: str
-    utterance: str
+
+# ── Role helper ────────────────────────────────────────────────────────────────
+
+def _require_admin(x_agent_role: Optional[str]):
+    """Raise 403 if the caller is not an admin."""
+    if (x_agent_role or "agent").lower() != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="FORBIDDEN: Admin role required for document management."
+        )
+
+
+# ── Health ─────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 def health():
@@ -56,11 +84,16 @@ def health():
         "status": "healthy",
         "plane": "control-plane (copilot-app)",
         "security_policy": "Zero cardholder data in control plane",
-        "phase": "2-hardened",
+        "phase": "3-copilot",
         "log_redaction": "active",
         "transcript_redaction": "active",
         "supervisor_join_prevention": "active",
+        "copilot_provider": copilot_provider.name,
+        "document_count": len(copilot_service.list_documents()),
     }
+
+
+# ── Call management ────────────────────────────────────────────────────────────
 
 @app.post("/api/calls")
 def create_call(req: Optional[CallSessionCreate] = None):
@@ -75,6 +108,7 @@ def create_call(req: Optional[CallSessionCreate] = None):
         "agent_id": call.agent_id,
         "created_at": call.created_at
     }
+
 
 @app.get("/api/calls/{call_id}")
 def get_call_status(call_id: str):
@@ -97,6 +131,7 @@ def get_call_status(call_id: str):
         "timeline_markers": call.pci_timeline_markers
     }
 
+
 @app.post("/api/calls/{call_id}/safe-mode/start")
 async def start_safe_mode(call_id: str):
     try:
@@ -104,6 +139,7 @@ async def start_safe_mode(call_id: str):
         return res
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
 
 @app.post("/api/calls/{call_id}/safe-mode/complete")
 async def complete_safe_mode(call_id: str, req: SafeModeCompleteRequest):
@@ -118,47 +154,155 @@ async def complete_safe_mode(call_id: str, req: SafeModeCompleteRequest):
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-@app.post("/api/copilot/suggest")
-def get_copilot_suggestion(query: CopilotQuery):
-    call = call_manager.get_call(query.call_id)
-    if not call:
-        raise HTTPException(status_code=404, detail="Call not found")
 
-    # Enforce Copilot Blackout during Safe Mode
-    if call.copilot_blackout:
-        raise HTTPException(
-            status_code=403,
-            detail="COPILOT_BLACKOUT: Suggestions and transcription strictly disabled during PCI Safe Mode."
+# ── Phase 3: Document Management (admin-only) ──────────────────────────────────
+
+@app.post("/api/documents", status_code=201)
+def upload_document(
+    req: DocumentUploadRequest,
+    x_agent_role: Optional[str] = Header(default="agent"),
+):
+    """Upload a new knowledge document. Requires admin role."""
+    _require_admin(x_agent_role)
+    try:
+        doc = copilot_service.add_document(
+            title=req.title,
+            content=req.content,
+            uploaded_by="admin",
         )
+        return {"success": True, "document": doc}
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
-    # Phase 2: Redact any PAN-like sequences from the transcript BEFORE
-    # it reaches the copilot model or an outside provider
-    redacted_utterance = call_manager.redact_transcript_text(query.utterance)
 
-    # Phase 2: Store redacted transcript for leak scanning
-    audit_service.record_transcript_chunk(
-        call_id=query.call_id,
-        chunk=redacted_utterance,
-        speaker="customer"
+@app.get("/api/documents")
+def list_documents():
+    """List all knowledge documents. Available to all roles."""
+    return {"documents": copilot_service.list_documents()}
+
+
+@app.get("/api/documents/{doc_id}")
+def get_document(doc_id: str):
+    """Get a single document by ID."""
+    doc = copilot_service.get_document(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return doc
+
+
+@app.delete("/api/documents/{doc_id}")
+def delete_document(
+    doc_id: str,
+    x_agent_role: Optional[str] = Header(default="agent"),
+):
+    """Delete a document. Requires admin role."""
+    _require_admin(x_agent_role)
+    deleted = copilot_service.delete_document(doc_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return DocumentDeleteResponse(
+        success=True,
+        doc_id=doc_id,
+        message=f"Document {doc_id} deleted successfully."
     )
 
-    # In Phase 0/1/2: Simulated Meta Muse Spark Copilot response
-    utterance_lower = redacted_utterance.lower()
-    suggestion = "Listen actively and verify customer's account."
-    if "refund" in utterance_lower:
-        suggestion = "Refund Policy: Standard refunds take 3-5 business days. Verify original payment method."
-    elif "cancel" in utterance_lower:
-        suggestion = "Retention Script: Offer 20% discount on renewal before processing cancellation."
-    elif "upgrade" in utterance_lower or "pay" in utterance_lower or "card" in utterance_lower:
-        suggestion = "Payment Intent Detected: Advise customer to wait for beep, then press [PCI SAFE MODE] button."
 
-    return {
-        "call_id": query.call_id,
-        "status": "active",
-        "suggestion": suggestion,
-        "model": "Muse Spark 1.3 (Simulated / Meta Model API)",
-        "transcript_redacted": redacted_utterance != query.utterance,
-    }
+# ── Phase 3: Live Transcript Ingestion ────────────────────────────────────────
+
+@app.post("/api/copilot/transcript")
+async def ingest_transcript_chunk(req: TranscriptChunk):
+    """
+    Accepts a live transcript chunk from the frontend.
+    Redacts it, stores it, generates a suggestion, and broadcasts
+    the suggestion to all connected agent WebSocket clients.
+    """
+    call = call_manager.get_call(req.call_id)
+    if not call:
+        # Auto-create call session if it doesn't exist (demo mode)
+        call = call_manager.create_call(call_id=req.call_id)
+
+    # Enforce copilot blackout during Safe Mode
+    if call.copilot_blackout:
+        return {
+            "call_id": req.call_id,
+            "suggestion": "",
+            "blackout": True,
+            "model": "BLACKOUT",
+        }
+
+    # Redact PAN from transcript
+    clean_text, redaction_count = redact_transcript(req.text)
+    if redaction_count > 0:
+        logger.warning(f"[Copilot] Redacted {redaction_count} PAN candidate(s) from transcript on call {req.call_id}")
+
+    # Store for leak scanning
+    audit_service.record_transcript_chunk(
+        call_id=req.call_id,
+        chunk=clean_text,
+        speaker=req.speaker,
+    )
+
+    # Generate structured suggestion
+    result = copilot_service.get_suggestion(
+        transcript=clean_text,
+        call_id=req.call_id,
+        safe_mode_active=call.safe_mode_active,
+    )
+    if redaction_count > 0:
+        result["redacted"] = True
+
+    # Broadcast suggestion to all agent WebSocket connections for this call
+    await call_manager.broadcast_to_role(req.call_id, "agent", {
+        "type": "COPILOT_SUGGESTION",
+        "call_id": req.call_id,
+        "suggestion": result["suggestion"],
+        "confidence": result["confidence"],
+        "source_doc_title": result.get("source_doc_title"),
+        "model": result["model"],
+        "redacted": result.get("redacted", False),
+    })
+
+    return result
+
+
+# ── Phase 3: Copilot Suggestion (direct query) ────────────────────────────────
+
+@app.post("/api/copilot/suggest")
+def get_copilot_suggestion(req: CopilotSuggestionRequest):
+    """
+    Direct copilot suggestion endpoint (no live-transcript broadcast).
+    Kept for backward compatibility and manual queries.
+    Enforces copilot blackout during Safe Mode.
+    """
+    call = call_manager.get_call(req.call_id)
+    safe_mode = False
+
+    if call:
+        if call.copilot_blackout:
+            raise HTTPException(
+                status_code=403,
+                detail="COPILOT_BLACKOUT: Suggestions and transcription strictly disabled during PCI Safe Mode."
+            )
+        safe_mode = call.safe_mode_active
+
+    result = copilot_service.get_suggestion(
+        transcript=req.utterance,
+        call_id=req.call_id,
+        safe_mode_active=safe_mode,
+    )
+
+    # Store redacted transcript
+    clean_text, _ = redact_transcript(req.utterance)
+    audit_service.record_transcript_chunk(
+        call_id=req.call_id,
+        chunk=clean_text,
+        speaker="customer",
+    )
+
+    return result
+
+
+# ── Audit ──────────────────────────────────────────────────────────────────────
 
 @app.get("/api/audit")
 def get_audit_trail(call_id: Optional[str] = None):
@@ -166,11 +310,14 @@ def get_audit_trail(call_id: Optional[str] = None):
         "events": audit_service.get_events(call_id=call_id)
     }
 
+
 @app.get("/api/audit/leak-scan")
 def run_leak_scan():
     return audit_service.scan_for_card_leaks()
 
-# Phase 2: Recording timeline endpoint
+
+# ── Phase 2: Recording timeline ───────────────────────────────────────────────
+
 @app.get("/api/calls/{call_id}/recording/timeline")
 def get_recording_timeline(call_id: str):
     """Returns the full recording timeline with PCI gap markers."""
@@ -179,12 +326,16 @@ def get_recording_timeline(call_id: str):
         raise HTTPException(status_code=404, detail=timeline["error"])
     return timeline
 
+
+# ── WebSocket ─────────────────────────────────────────────────────────────────
+
 @app.websocket("/ws/call/{call_id}/{role}")
 async def call_websocket(websocket: WebSocket, call_id: str, role: str):
     """
     Role: 'agent' or 'customer'.
     Synchronizes call events, audio muting/isolation state, and WebRTC signaling.
     Phase 2: Enforces supervisor join prevention during Safe Mode.
+    Phase 3: Forwards COPILOT_SUGGESTION messages to agent channel.
     """
     if role not in ["agent", "customer"]:
         await websocket.close(code=1008)
@@ -212,7 +363,9 @@ async def call_websocket(websocket: WebSocket, call_id: str, role: str):
         "agent_isolated": call.agent_isolated,
         "token_ref": call.token_ref,
         "last4": call.last4,
-        "brand": call.brand
+        "brand": call.brand,
+        "copilot_provider": copilot_provider.name,
+        "document_count": len(copilot_service.list_documents()),
     })
 
     try:
@@ -223,6 +376,7 @@ async def call_websocket(websocket: WebSocket, call_id: str, role: str):
 
             if msg_type == "TRIGGER_SAFE_MODE" and role == "agent":
                 await call_manager.trigger_safe_mode(call_id)
+
             elif msg_type == "SIGNAL" or msg_type == "AUDIO_RELAY":
                 # Forward WebRTC signal or audio relay to the other party ONLY if not isolated
                 other_role = "customer" if role == "agent" else "agent"
@@ -234,26 +388,53 @@ async def call_websocket(websocket: WebSocket, call_id: str, role: str):
                         except Exception:
                             dead.add(peer)
                     call.connections[other_role].difference_update(dead)
-            elif msg_type == "TRANSCRIPT_CHUNK" and not call.copilot_blackout:
-                # Phase 2: Redact transcript before forwarding to agent copilot
+
+            elif msg_type == "TRANSCRIPT_CHUNK":
+                # Phase 2 + Phase 3: Redact transcript and generate suggestion
+                if call.copilot_blackout:
+                    # During Safe Mode — send blackout notice to agent only
+                    await websocket.send_json({
+                        "type": "COPILOT_SUGGESTION",
+                        "call_id": call_id,
+                        "suggestion": "",
+                        "blackout": True,
+                        "model": "BLACKOUT",
+                    })
+                    continue
+
                 transcript_text = msg.get("text", "")
-                redacted_text = call_manager.redact_transcript_text(transcript_text)
-                msg["text"] = redacted_text
+                speaker = msg.get("speaker", "customer")
+
+                # Redact PAN before any processing
+                redacted_text, redaction_count = redact_transcript(transcript_text)
+                if redaction_count > 0:
+                    logger.warning(f"[WS] Redacted PAN from transcript on call {call_id}")
 
                 # Store redacted transcript for leak scanning
                 audit_service.record_transcript_chunk(
                     call_id=call_id,
                     chunk=redacted_text,
-                    speaker="customer"
+                    speaker=speaker,
                 )
 
-                dead = set()
-                for peer in call.connections["agent"]:
-                    try:
-                        await peer.send_json(msg)
-                    except Exception:
-                        dead.add(peer)
-                call.connections["agent"].difference_update(dead)
+                # Phase 3: Generate structured suggestion and broadcast to agent
+                result = copilot_service.get_suggestion(
+                    transcript=redacted_text,
+                    call_id=call_id,
+                    safe_mode_active=call.safe_mode_active,
+                )
+                if redaction_count > 0:
+                    result["redacted"] = True
+
+                await call_manager.broadcast_to_role(call_id, "agent", {
+                    "type": "COPILOT_SUGGESTION",
+                    "call_id": call_id,
+                    "suggestion": result["suggestion"],
+                    "confidence": result["confidence"],
+                    "source_doc_title": result.get("source_doc_title"),
+                    "model": result["model"],
+                    "redacted": result.get("redacted", False),
+                })
 
     except WebSocketDisconnect:
         call.connections[role].discard(websocket)
