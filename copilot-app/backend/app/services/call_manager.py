@@ -100,6 +100,7 @@ class CallManager:
         - Lock call from new participants (supervisor join prevention)
         - Connect Customer to Payment Voice Agent
         """
+        start_iso = time.perf_counter()
         call = self.get_call(call_id)
         if not call:
             call = self.create_call(call_id=call_id)
@@ -119,11 +120,12 @@ class CallManager:
 
         # Phase 2: Pause server-side recording
         recording_service.pause_for_pci(call_id, session_id=None)
+        isolation_latency_ms = round((time.perf_counter() - start_iso) * 1000, 2)
 
         audit_service.record_event(
             call_id=call_id,
             event_type="SAFE_MODE_START",
-            details="PCI Safe Mode triggered. Agent audio isolated, recording paused, supervisor join blocked."
+            details=f"PCI Safe Mode triggered in {isolation_latency_ms}ms. Agent audio isolated, recording paused, supervisor join blocked."
         )
 
         # Notify Payment Service to launch payment session
@@ -151,6 +153,7 @@ class CallManager:
             "copilot_blackout": True,
             "recording_status": "PAUSED_PCI_WITHHELD",
             "payment_session_id": call.payment_session_id,
+            "isolation_latency_ms": isolation_latency_ms,
             "initial_data": data
         })
 
@@ -158,6 +161,7 @@ class CallManager:
             "call_id": call_id,
             "status": "SAFE_MODE_ACTIVE",
             "agent_isolated": True,
+            "isolation_latency_ms": isolation_latency_ms,
             "payment_session_id": call.payment_session_id,
             "data": data
         }

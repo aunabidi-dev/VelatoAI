@@ -11,6 +11,10 @@ Phase 2 additions:
 import time
 import uuid
 import re
+import hashlib
+import json
+import csv
+import io
 from typing import List, Dict, Any, Optional
 from ..models.schemas import AuditEvent
 
@@ -63,6 +67,9 @@ class AuditService:
         self._transcript_chunks: List[Dict[str, Any]] = []
         # Phase 2: Recording metadata store for leak scanning
         self._recording_metadata: List[Dict[str, Any]] = []
+        # Phase 4: Cryptographic SHA-256 chain genesis
+        self._genesis_hash: str = "0" * 64
+        self._prev_hash: str = self._genesis_hash
 
     def record_event(
         self,
@@ -83,16 +90,28 @@ class AuditService:
             if pan_match:
                 raise ValueError("Security Violation: Attempted to log potential card digits in audit trail!")
 
-        event = {
-            "id": f"aud_{uuid.uuid4().hex[:10]}",
+        ts = time.time()
+        event_id = f"aud_{uuid.uuid4().hex[:10]}"
+        # Phase 4: Cryptographic SHA-256 Hash Chaining
+        hash_payload = {
+            "id": event_id,
             "call_id": call_id,
-            "timestamp": time.time(),
+            "timestamp": ts,
             "event_type": event_type,
             "token_ref": token_ref,
             "last4": last4,
             "brand": brand,
-            "details": details
+            "details": details,
+            "prev_hash": self._prev_hash,
         }
+        serialized_payload = json.dumps(hash_payload, sort_keys=True)
+        event_hash = hashlib.sha256(serialized_payload.encode("utf-8")).hexdigest()
+
+        event = {
+            **hash_payload,
+            "hash": event_hash,
+        }
+        self._prev_hash = event_hash
         self._events.append(event)
         return event
 
@@ -121,14 +140,15 @@ class AuditService:
 
     def scan_for_card_leaks(self) -> Dict[str, Any]:
         """
-        Phase 2 Enhanced: Audits ALL data stores for Luhn-valid card numbers.
+        Phase 2 & Phase 4 Enhanced: Audits ALL data stores for Luhn-valid card numbers.
         Scans:
           1. Audit events (all fields)
           2. Transcript chunks
           3. Recording metadata
-        Returns structured results for the Security Proof panel.
+        Returns structured results for the Security Proof panel with benchmark timing.
         Leak count > 0 means the build-time test should FAIL.
         """
+        start_t = time.perf_counter()
         leaks_detected = []
         total_records = 0
 
@@ -172,12 +192,96 @@ class AuditService:
 
         total_leaks = sum(l["count"] for l in leaks_detected)
 
+        scan_duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
         return {
             "total_records_checked": total_records,
             "leaks_found": total_leaks,
             "status": "COMPLIANT_ZERO_TRUST" if total_leaks == 0 else "BREACH_DETECTED",
             "sources_scanned": ["audit_events", "transcripts", "recording_metadata"],
+            "scan_duration_ms": scan_duration_ms,
             "details": leaks_detected,
+        }
+
+    # ── Phase 4: Cryptographic Verification & Export ──────────────────────────
+
+    def verify_chain_integrity(self) -> Dict[str, Any]:
+        """
+        Phase 4: Cryptographically verifies the SHA-256 hash chain of the audit trail.
+        Returns whether the tamper-evident chain is intact.
+        """
+        expected_prev = self._genesis_hash
+        for idx, event in enumerate(self._events):
+            if event.get("prev_hash") != expected_prev:
+                return {
+                    "valid": False,
+                    "status": "TAMPER_DETECTED",
+                    "broken_at_index": idx,
+                    "event_id": event.get("id"),
+                    "details": "Previous hash link mismatch"
+                }
+
+            # Recalculate hash of payload
+            hash_payload = {
+                "id": event.get("id"),
+                "call_id": event.get("call_id"),
+                "timestamp": event.get("timestamp"),
+                "event_type": event.get("event_type"),
+                "token_ref": event.get("token_ref"),
+                "last4": event.get("last4"),
+                "brand": event.get("brand"),
+                "details": event.get("details"),
+                "prev_hash": event.get("prev_hash"),
+            }
+            computed_hash = hashlib.sha256(json.dumps(hash_payload, sort_keys=True).encode("utf-8")).hexdigest()
+            if event.get("hash") != computed_hash:
+                return {
+                    "valid": False,
+                    "status": "TAMPER_DETECTED",
+                    "broken_at_index": idx,
+                    "event_id": event.get("id"),
+                    "details": "Payload content altered after signing"
+                }
+            expected_prev = event.get("hash")
+
+        return {
+            "valid": True,
+            "status": "CRYPTOGRAPHICALLY_VERIFIED",
+            "algorithm": "SHA-256",
+            "total_events": len(self._events),
+            "latest_hash": self._prev_hash,
+            "genesis_hash": self._genesis_hash
+        }
+
+    def export_audit_log(self, format_type: str = "json") -> Dict[str, Any]:
+        """
+        Phase 4: Exports the verifiable audit trail in JSON or CSV format.
+        Includes full cryptographic proof and signature block.
+        """
+        verification = self.verify_chain_integrity()
+        events = list(self._events)
+
+        if format_type.lower() == "csv":
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(["id", "call_id", "timestamp", "event_type", "token_ref", "last4", "brand", "details", "prev_hash", "hash"])
+            for e in events:
+                writer.writerow([
+                    e.get("id"), e.get("call_id"), e.get("timestamp"), e.get("event_type"),
+                    e.get("token_ref") or "", e.get("last4") or "", e.get("brand") or "",
+                    e.get("details") or "", e.get("prev_hash") or "", e.get("hash") or ""
+                ])
+            return {
+                "format": "csv",
+                "content": output.getvalue(),
+                "verification": verification,
+                "exported_at": time.time(),
+            }
+
+        return {
+            "format": "json",
+            "events": events,
+            "verification": verification,
+            "exported_at": time.time(),
         }
 
 

@@ -1,10 +1,13 @@
 /**
- * Web Audio API Security Chime and Beep Synthesizer
- * Generates clear, audible audio tones for PCI Safe Mode transition and confirmation.
+ * Web Audio API Security Chime and Beep Synthesizer — Phase 4 Enhanced
+ * Generates clear, audible audio tones for PCI Safe Mode transition, confirmation,
+ * and realistic interactive recording timeline playback verification.
  */
 class AudioSynthesizer {
   constructor() {
     this.ctx = null;
+    this._humOsc = null;
+    this._humGain = null;
   }
 
   async _initContext() {
@@ -118,6 +121,75 @@ class AudioSynthesizer {
       });
     } catch (e) {
       console.warn("[AudioSynthesizer] Error playing success chime:", e);
+    }
+  }
+
+  /**
+   * System Notice Chime: Played during the recording notice segment ("Payment details withheld").
+   */
+  async playNoticeChime() {
+    try {
+      const ctx = await this._initContext();
+      if (!ctx) return;
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.25);
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.3);
+    } catch (e) {}
+  }
+
+  /**
+   * Phase 4: Recording Player Ambient Voice Simulation.
+   * Generates gentle subtle harmonic phone hum during normal recorded audio segments.
+   */
+  async startRecordedAudioHum() {
+    try {
+      const ctx = await this._initContext();
+      if (!ctx || this._humOsc) return;
+
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(220, ctx.currentTime); // A3 phone harmonic
+
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.1);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+
+      this._humOsc = osc;
+      this._humGain = gain;
+    } catch (e) {}
+  }
+
+  /**
+   * Stop recording player hum immediately (used when hitting the PCI gap or pausing).
+   */
+  stopRecordedAudioHum() {
+    try {
+      if (this._humGain && this.ctx) {
+        this._humGain.gain.setValueAtTime(0.0001, this.ctx.currentTime);
+      }
+      if (this._humOsc) {
+        this._humOsc.stop();
+        this._humOsc.disconnect();
+        this._humOsc = null;
+      }
+    } catch (e) {
+      this._humOsc = null;
     }
   }
 }

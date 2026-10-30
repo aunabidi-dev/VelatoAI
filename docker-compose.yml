@@ -16,16 +16,16 @@ services:
     ports:
       - "5433:5432"
     environment:
-      POSTGRES_USER: zytasafe
-      POSTGRES_PASSWORD: zytasafe_secure_pass
-      POSTGRES_DB: zytasafe_db
+      POSTGRES_USER: ${POSTGRES_USER:-zytasafe}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zytasafe_secure_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-zytasafe_db}
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
       - control-plane-net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U zytasafe -d zytasafe_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-zytasafe} -d $${POSTGRES_DB:-zytasafe_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -34,7 +34,7 @@ services:
   livekit:
     image: livekit/livekit-server:v1.6.0
     container_name: zytasafe-livekit
-    command: ["--dev", "--bind", "0.0.0.0", "--keys", "devkey: secret"]
+    command: ["--dev", "--bind", "0.0.0.0", "--keys", "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-secret}"]
     ports:
       - "7880:7880"       # Signaling & HTTP
       - "7881:7881"       # WebRTC TCP
@@ -55,9 +55,9 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - PCI_SCOPE=ISOLATED
-      - LIVEKIT_URL=http://livekit:7880
-      - LIVEKIT_API_KEY=devkey
-      - LIVEKIT_API_SECRET=secret
+      - LIVEKIT_URL=${LIVEKIT_URL:-http://livekit:7880}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
     read_only: true # Enforce read-only filesystem for PCI compliance
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
@@ -78,11 +78,12 @@ services:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql://zytasafe:zytasafe_secure_pass@postgres:5432/zytasafe_db
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-zytasafe}:${POSTGRES_PASSWORD:-zytasafe_secure_pass}@postgres:5432/${POSTGRES_DB:-zytasafe_db}
       - PAYMENT_SERVICE_URL=http://payment-service:8001
-      - LIVEKIT_URL=http://livekit:7880
-      - LIVEKIT_API_KEY=devkey
-      - LIVEKIT_API_SECRET=secret
+      - LIVEKIT_URL=${LIVEKIT_URL:-http://livekit:7880}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+      - COPILOT_PROVIDER=${COPILOT_PROVIDER:-local}
     depends_on:
       postgres:
         condition: service_healthy

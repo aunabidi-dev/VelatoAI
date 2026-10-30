@@ -591,6 +591,14 @@ export default function App() {
             onRunLeakScan={handleRunLeakScan}
             scanResults={scanResults}
             onRefreshAudit={fetchAudit}
+            callState={callState}
+            paymentResult={paymentResult}
+            agentRole={agentRole}
+            onTriggerSafeMode={handleTriggerSafeMode}
+            onSendPan={handleSendPan}
+            onSendExpiry={handleSendExpiry}
+            onSendCvv={handleSendCvv}
+            onConfirmPayment={handleConfirmPayment}
           />
         )}
       </main>
