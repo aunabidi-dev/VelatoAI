@@ -174,23 +174,51 @@ class CallRecording:
         Returns the full recording timeline.
         The timeline shows exactly where audio exists, where it was
         withheld, and the PCI markers — but never any card data.
+        Phase 4: Adds normalized start/end offsets relative to call start
+        for high-fidelity QA scrubber playback.
         """
-        segments = [s.to_dict() for s in self.segments]
+        now = time.time()
+        raw_segments = [s.to_dict() for s in self.segments]
 
-        # Include the current segment if still open
         if self._current_segment:
             current = self._current_segment.to_dict()
-            current["end_time"] = None  # Still recording
-            current["duration_s"] = round(time.time() - self._current_segment.start_time, 2)
-            segments.append(current)
+            current["end_time"] = None
+            current["duration_s"] = round(now - self._current_segment.start_time, 2)
+            raw_segments.append(current)
+
+        # Calculate relative offsets from call creation time
+        enriched_segments = []
+        cumulative_s = 0.0
+        withheld_duration_s = 0.0
+
+        for seg in raw_segments:
+            seg_start = seg.get("start_time") or self.created_at
+            seg_end = seg.get("end_time") or now
+            dur = round(max(seg_end - seg_start, 0.1), 2)
+            if seg.get("type") == "PCI_WITHHELD":
+                withheld_duration_s += dur
+
+            enriched = {
+                **seg,
+                "start_offset_s": round(max(seg_start - self.created_at, 0.0), 2),
+                "end_offset_s": round(max(seg_end - self.created_at, 0.1), 2),
+                "duration_s": dur,
+            }
+            enriched_segments.append(enriched)
+
+        total_duration = round(max(now - self.created_at, 0.1), 2)
 
         return {
             "recording_id": self.recording_id,
             "call_id": self.call_id,
             "state": self.state.value,
-            "total_segments": len(segments),
+            "total_segments": len(enriched_segments),
             "pci_gaps": self.pci_gap_count,
-            "segments": segments,
+            "has_pci_gap": self.pci_gap_count > 0,
+            "total_duration_s": total_duration,
+            "withheld_duration_s": round(withheld_duration_s, 2),
+            "compliance_status": "PCI_GAP_ENFORCED" if self.pci_gap_count > 0 else "NO_PAYMENT_INITIATED",
+            "segments": enriched_segments,
         }
 
     def has_pci_gap(self) -> bool:
