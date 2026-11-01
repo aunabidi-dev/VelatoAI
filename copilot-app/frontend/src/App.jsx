@@ -562,6 +562,7 @@ export default function App() {
           <AgentDesktop
             callState={callState}
             onTriggerSafeMode={handleTriggerSafeMode}
+            onCancelSafeMode={handleCancelSafeMode}
             copilotSuggestion={copilotSuggestion}
             copilotBlackout={copilotBlackout}
             paymentResult={paymentResult}

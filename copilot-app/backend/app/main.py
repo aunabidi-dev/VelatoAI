@@ -501,4 +501,9 @@ async def call_websocket(websocket: WebSocket, call_id: str, role: str):
                 })
 
     except WebSocketDisconnect:
-        call.connections[role].discard(websocket)
+        pass
+    except Exception as e:
+        logger.debug('WS disconnect on call %s: %s', call_id, e)
+    finally:
+        if call and role in call.connections:
+            call.connections[role].discard(websocket)

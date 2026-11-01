@@ -97,9 +97,15 @@ export default function AdminPanel({ agentRole = 'admin', onBack }) {
     }
   };
 
-  const formatDate = (ts) => new Date(ts * 1000).toLocaleDateString('en-US', {
-    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-  });
+  const formatDate = (ts) => {
+    if (!ts) return 'Just now';
+    const num = Number(ts);
+    if (isNaN(num)) return 'Recent';
+    const d = new Date(num < 10000000000 ? num * 1000 : num);
+    return isNaN(d.getTime()) ? 'Recent' : d.toLocaleDateString('en-US', {
+      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+  };
 
   return (
     <div className="w-full max-w-4xl mx-auto flex flex-col gap-6">

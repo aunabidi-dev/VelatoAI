@@ -262,8 +262,8 @@ async def websocket_payment_endpoint(websocket: WebSocket, session_id: str):
                 session.abort("Aborted via websocket")
                 await websocket.send_json({"type": "aborted", "data": {"state": session.state.value, "wiped": True}})
                 break
-    except WebSocketDisconnect:
-        # Hang-up or disconnect during payment: automatically wipe memory immediately!
+    except (WebSocketDisconnect, Exception) as e:
+        # Hang-up or abnormal disconnect during payment: automatically wipe memory immediately!
         if session.state not in (PaymentState.RESUMING, PaymentState.FAILED, PaymentState.TIMED_OUT):
             session.abort("Customer disconnected during payment")
-            logger.info(f"Session {session_id}: hang-up wipe triggered")
+            logger.info(f"Session {session_id}: hang-up wipe triggered ({type(e).__name__})")
