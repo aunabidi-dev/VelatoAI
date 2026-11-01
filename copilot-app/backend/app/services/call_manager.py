@@ -282,6 +282,7 @@ class CallManager:
 
     def reset_call(self, call_id: str):
         """Reset a call back to a clean initial conversation state."""
+        recording_service.start_recording(call_id)
         call = self.get_call(call_id)
         if call:
             call.safe_mode_active = False
