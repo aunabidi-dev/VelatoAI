@@ -180,21 +180,21 @@ export default function RecordingPlayer({ callId = "call_meta_hackathon_01", age
   const hasPciGap = displaySegments.some(s => s.type === 'PCI_WITHHELD');
 
   return (
-    <div className="glass-panel p-5 border-slate-800 flex flex-col gap-4 bg-slate-950/70">
+    <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-5 border-[#1A2824] flex flex-col gap-4 bg-slate-950/70">
       {/* Player Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-[#1A2824]/80 pb-3">
         <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+          <div className="p-2 rounded-lg bg-[#0B2A1E] border border-[#165038]/30 text-[#00E676]">
             <FileAudio className="w-5 h-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-slate-100">PCI Compliance Call Recording Player</h3>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-400">
+              <h3 className="text-sm font-bold text-[#EDF3F0]">PCI Compliance Call Recording Player</h3>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#070B0A] border border-[#22322F] text-[#768782]">
                 {timelineData?.recording_id || 'rec_server_stream'}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[11px] text-[#768782]">
               Server-enforced stream with hardware-level silence during PCI Safe Mode
             </p>
           </div>
@@ -208,7 +208,7 @@ export default function RecordingPlayer({ callId = "call_meta_hackathon_01", age
               <span>PCI Gap Enforced: Zero Audio Recorded</span>
             </span>
           ) : (
-            <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-slate-900 text-slate-400 border border-slate-800">
+            <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-[#070B0A] text-[#768782] border border-[#1A2824]">
               Continuous Normal Audio
             </span>
           )}
@@ -217,16 +217,16 @@ export default function RecordingPlayer({ callId = "call_meta_hackathon_01", age
 
       {/* Visual Timeline Bar */}
       <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
+        <div className="flex items-center justify-between text-[11px] font-mono text-[#768782]">
           <span>Recorded Audio Timeline</span>
-          <span className="text-cyan-400 font-bold">
+          <span className="text-[#00E676] font-bold">
             {formatTime(currentTime)} / {formatTime(totalDuration)}
           </span>
         </div>
 
         {/* Scrubber Container */}
         <div
-          className="w-full h-14 bg-slate-900 rounded-xl relative overflow-hidden border border-slate-800 cursor-pointer select-none flex items-center p-1"
+          className="w-full h-14 bg-[#070B0A] rounded-xl relative overflow-hidden border border-[#1A2824] cursor-pointer select-none flex items-center p-1"
           onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
@@ -245,16 +245,16 @@ export default function RecordingPlayer({ callId = "call_meta_hackathon_01", age
                   <div
                     key={idx}
                     style={{ width: `${widthPct}%` }}
-                    className="h-full bg-gradient-to-r from-cyan-950/70 to-cyan-900/40 border-r border-cyan-800/40 relative flex items-center justify-center overflow-hidden group"
+                    className="h-full bg-[#0B261B] border-r border-[#165038] relative flex items-center justify-center overflow-hidden group"
                     title={`Normal Audio (${Math.round(segDur)}s)`}
                   >
                     <div className="flex items-center gap-0.5 opacity-30 group-hover:opacity-60 transition-opacity">
-                      <div className="w-1 h-4 bg-cyan-400 rounded-full" />
-                      <div className="w-1 h-7 bg-cyan-400 rounded-full" />
-                      <div className="w-1 h-3 bg-cyan-400 rounded-full" />
-                      <div className="w-1 h-5 bg-cyan-400 rounded-full" />
+                      <div className="w-1 h-4 bg-[#00E676] rounded-full" />
+                      <div className="w-1 h-7 bg-[#00E676] rounded-full" />
+                      <div className="w-1 h-3 bg-[#00E676] rounded-full" />
+                      <div className="w-1 h-5 bg-[#00E676] rounded-full" />
                     </div>
-                    <span className="absolute bottom-1 left-2 text-[9px] font-mono text-cyan-300/80 font-bold">
+                    <span className="absolute bottom-1 left-2 text-[9px] font-mono text-[#00E676]/80 font-bold">
                       NORMAL AUDIO
                     </span>
                   </div>
@@ -298,10 +298,10 @@ export default function RecordingPlayer({ callId = "call_meta_hackathon_01", age
 
             {/* Playhead Scrubber Needle */}
             <div
-              className="absolute top-0 bottom-0 w-0.5 bg-rose-500 z-20 pointer-events-none shadow-[0_0_8px_rgba(244,63,94,0.8)]"
+              className="absolute top-0 bottom-0 w-0.5 bg-rose-500 z-20 pointer-events-none "
               style={{ left: `${(currentTime / totalDuration) * 100}%` }}
             >
-              <div className="w-2.5 h-2.5 rounded-full bg-rose-400 -ml-1 -top-1 absolute shadow-md" />
+              <div className="w-2.5 h-2.5 rounded-full bg-rose-400 -ml-1 -top-1 absolute " />
             </div>
           </div>
         </div>
@@ -309,10 +309,10 @@ export default function RecordingPlayer({ callId = "call_meta_hackathon_01", age
         {/* Active Segment Telemetry Pill */}
         <div className="flex items-center justify-between text-xs pt-1">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase font-mono text-slate-500">Active Audio State:</span>
+            <span className="text-[10px] uppercase font-mono text-[#768782]">Active Audio State:</span>
             {currentSegment.type === 'AUDIO' ? (
-              <span className="text-[11px] font-mono text-cyan-300 font-semibold flex items-center gap-1 bg-cyan-950/50 px-2 py-0.5 rounded border border-cyan-800/60">
-                <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="text-[11px] font-mono text-[#00E676] font-semibold flex items-center gap-1 bg-[#0B261B]/50 px-2 py-0.5 rounded border border-[#165038]">
+                <Volume2 className="w-3.5 h-3.5 text-[#00E676]" />
                 <span>Normal Conversation Audio (Agent + Customer)</span>
               </span>
             ) : currentSegment.type === 'NOTICE' ? (
@@ -332,7 +332,7 @@ export default function RecordingPlayer({ callId = "call_meta_hackathon_01", age
           {hasPciGap && (
             <button
               onClick={handleJumpToPciGap}
-              className="text-[10px] font-mono text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors px-2 py-1 rounded bg-slate-900 border border-slate-800 hover:border-amber-500/40"
+              className="text-[10px] font-mono text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors px-2 py-1 rounded bg-[#070B0A] border border-[#1A2824] hover:border-amber-500/40"
               title="Jump directly to the withheld PCI gap to verify silence"
             >
               <FastForward className="w-3 h-3 text-amber-400" />
@@ -343,12 +343,12 @@ export default function RecordingPlayer({ callId = "call_meta_hackathon_01", age
       </div>
 
       {/* Control Buttons Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/60">
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#1A2824]/60">
         <div className="flex items-center gap-2">
           {/* Rewind 5s */}
           <button
             onClick={() => handleSeek(currentTime - 5)}
-            className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 transition-colors"
+            className="p-2 rounded-lg bg-[#070B0A] hover:bg-slate-800 text-[#C0D0CB] border border-[#22322F] transition-colors"
             title="Rewind 5s"
           >
             <Rewind className="w-4 h-4" />
@@ -357,7 +357,7 @@ export default function RecordingPlayer({ callId = "call_meta_hackathon_01", age
           {/* Play/Pause */}
           <button
             onClick={togglePlay}
-            className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-4 py-2 rounded-lg text-xs flex items-center gap-2 transition-all shadow-md shadow-cyan-950/40"
+            className="bg-[#00E676] hover:bg-[#00C853] text-[#070B0A] text-[#070B0A] font-bold px-4 py-2 rounded-lg text-xs flex items-center gap-2 transition-all "
           >
             {isPlaying ? (
               <>
@@ -375,7 +375,7 @@ export default function RecordingPlayer({ callId = "call_meta_hackathon_01", age
           {/* Forward 5s */}
           <button
             onClick={() => handleSeek(currentTime + 5)}
-            className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 transition-colors"
+            className="p-2 rounded-lg bg-[#070B0A] hover:bg-slate-800 text-[#C0D0CB] border border-[#22322F] transition-colors"
             title="Forward 5s"
           >
             <FastForward className="w-4 h-4" />
@@ -388,7 +388,7 @@ export default function RecordingPlayer({ callId = "call_meta_hackathon_01", age
               setIsPlaying(false);
               soundFx.stopRecordedAudioHum();
             }}
-            className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors"
+            className="p-2 rounded-lg bg-[#070B0A] hover:bg-slate-800 text-[#768782] hover:text-[#EDF3F0] border border-[#1A2824] transition-colors"
             title="Restart Timeline"
           >
             <RotateCcw className="w-4 h-4" />
@@ -397,15 +397,15 @@ export default function RecordingPlayer({ callId = "call_meta_hackathon_01", age
 
         {/* Speed Controls + Export Button */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800 text-[11px] font-mono">
+          <div className="flex items-center gap-1 bg-[#070B0A] p-1 rounded-lg border border-[#1A2824] text-[11px] font-mono">
             {[1.0, 1.5, 2.0].map((speed) => (
               <button
                 key={speed}
                 onClick={() => setPlaybackSpeed(speed)}
                 className={`px-2 py-0.5 rounded transition-colors ${
                   playbackSpeed === speed
-                    ? 'bg-cyan-500 text-slate-950 font-bold'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-[#00E676] text-[#070B0A] font-bold'
+                    : 'text-[#768782] hover:text-[#EDF3F0]'
                 }`}
               >
                 {speed}x
@@ -415,7 +415,7 @@ export default function RecordingPlayer({ callId = "call_meta_hackathon_01", age
 
           <button
             onClick={handleExportRecording}
-            className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-cyan-300 px-3 py-1.5 rounded-lg text-xs font-mono flex items-center gap-1.5 transition-colors"
+            className="bg-[#070B0A] hover:bg-slate-800 border border-[#22322F] text-[#EDF3F0] hover:text-[#00E676] px-3 py-1.5 rounded-lg text-xs font-mono flex items-center gap-1.5 transition-colors"
             title="Export call audio manifest and compliance proof"
           >
             <Download className="w-3.5 h-3.5" />

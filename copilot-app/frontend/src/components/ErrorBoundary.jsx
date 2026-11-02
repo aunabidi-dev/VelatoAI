@@ -30,7 +30,7 @@ export default class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6 antialiased font-sans">
-          <div className="max-w-lg w-full bg-slate-900 border border-rose-500/40 rounded-2xl p-6 shadow-2xl flex flex-col gap-4 text-center">
+          <div className="max-w-lg w-full bg-[#0E1614] border border-rose-500/40 rounded-2xl p-6 shadow-2xl flex flex-col gap-4 text-center">
             <div className="w-14 h-14 mx-auto rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center">
               <ShieldAlert className="w-8 h-8 text-rose-400" />
             </div>
@@ -44,7 +44,7 @@ export default class ErrorBoundary extends React.Component {
               </p>
             </div>
 
-            <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800 text-left font-mono text-xs text-rose-300 max-h-40 overflow-y-auto">
+            <div className="bg-slate-950 p-3.5 rounded-lg border border-[#1A2824] text-left font-mono text-xs text-rose-300 max-h-40 overflow-y-auto">
               <div className="font-bold text-rose-400 mb-1">
                 {this.state.error?.name || 'Error'}: {this.state.error?.message || 'Unknown runtime error'}
               </div>
@@ -58,7 +58,7 @@ export default class ErrorBoundary extends React.Component {
             <div className="flex gap-3 justify-center mt-2">
               <button
                 onClick={this.handleReset}
-                className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-5 py-2.5 rounded-lg text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-cyan-950/40"
+                className="bg-[#00E676] hover:bg-[#00C853] text-[#070B0A] font-bold px-5 py-2.5 rounded-lg text-xs flex items-center justify-center gap-2 transition-all "
               >
                 <RefreshCw className="w-4 h-4" />
                 <span>Reload Application</span>

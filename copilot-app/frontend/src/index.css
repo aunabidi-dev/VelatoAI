@@ -1,121 +1,139 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/Satoshi-Regular.otf') format('opentype'),
+       url('./assets/fonts/Satoshi-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/Satoshi-Italic.otf') format('opentype'),
+       url('./assets/fonts/Satoshi-Italic.otf') format('opentype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/Satoshi-Medium.otf') format('opentype'),
+       url('./assets/fonts/Satoshi-Medium.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/Satoshi-MediumItalic.otf') format('opentype'),
+       url('./assets/fonts/Satoshi-MediumItalic.otf') format('opentype');
+  font-weight: 500;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/Satoshi-Bold.otf') format('opentype'),
+       url('./assets/fonts/Satoshi-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/Satoshi-BoldItalic.otf') format('opentype'),
+       url('./assets/fonts/Satoshi-BoldItalic.otf') format('opentype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/Satoshi-Black.otf') format('opentype'),
+       url('./assets/fonts/Satoshi-Black.otf') format('opentype');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/Satoshi-BlackItalic.otf') format('opentype'),
+       url('./assets/fonts/Satoshi-BlackItalic.otf') format('opentype');
+  font-weight: 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/Satoshi-Light.otf') format('opentype'),
+       url('./assets/fonts/Satoshi-Light.otf') format('opentype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/Satoshi-LightItalic.otf') format('opentype'),
+       url('./assets/fonts/Satoshi-LightItalic.otf') format('opentype');
+  font-weight: 300;
+  font-style: italic;
+  font-display: swap;
+}
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --bg-primary: #07090e;
-  --bg-secondary: #0d121d;
-  --bg-card: rgba(16, 23, 38, 0.7);
-  --bg-card-border: rgba(56, 189, 248, 0.15);
-  --cyan-glow: #00f0ff;
-  --emerald-safe: #10b981;
-  --amber-warning: #f59e0b;
-  --rose-isolated: #f43f5e;
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --bg-primary: #070B0A;
+  --bg-surface: #0E1614;
+  --bg-surface-elevated: #131E1B;
+  --border-muted: #1A2824;
+  --border-subtle: #223831;
+  --primary-green: #00E676;
+  --secondary-mint: #34D399;
+  --text-primary: #EDF3F0;
+  --text-muted: #768782;
+  --text-dim: #4B5A55;
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+*, html, body, button, input, select, textarea {
+  font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+.font-mono, pre, code {
+  font-family: 'JetBrains Mono', monospace !important;
 }
 
 body {
   background-color: var(--bg-primary);
-  color: var(--text-main);
-  font-family: var(--font-sans);
+  color: var(--text-primary);
   overflow-x: hidden;
-  background-image: 
-    radial-gradient(circle at 15% 20%, rgba(6, 182, 212, 0.08) 0%, transparent 40%),
-    radial-gradient(circle at 85% 80%, rgba(99, 102, 241, 0.08) 0%, transparent 45%);
   min-height: 100vh;
 }
 
-/* Glassmorphism containers */
-.glass-panel {
-  background: var(--bg-card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--bg-card-border);
-  border-radius: 14px;
+/* Custom crisp dark scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
 }
-
-.glass-panel-glow {
-  background: var(--bg-card);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(0, 240, 255, 0.3);
-  box-shadow: 0 0 25px rgba(0, 240, 255, 0.1);
-  border-radius: 14px;
+::-webkit-scrollbar-track {
+  background: #070B0A;
 }
-
-.glass-panel-isolated {
-  background: rgba(30, 10, 18, 0.85);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(244, 63, 94, 0.4);
-  box-shadow: 0 0 30px rgba(244, 63, 94, 0.15);
-  border-radius: 14px;
+::-webkit-scrollbar-thumb {
+  background: #1A2824;
+  border-radius: 9999px;
 }
-
-/* Safe mode button */
-.btn-safe-mode {
-  background: linear-gradient(135deg, #f43f5e 0%, #e11d48 50%, #be123c 100%);
-  color: #ffffff;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 12px 24px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 0 20px rgba(244, 63, 94, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.btn-safe-mode:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 0 30px rgba(244, 63, 94, 0.7);
-}
-
-.btn-safe-mode:active {
-  transform: translateY(1px);
-}
-
-.pulse-badge {
-  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-@keyframes pulse-ring {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.6;
-    transform: scale(1.05);
-  }
-}
-
-/* Sound wave animation */
-.wave-bar {
-  width: 4px;
-  background: #00f0ff;
-  border-radius: 3px;
-  animation: wave-anim 1.2s ease-in-out infinite alternate;
-}
-
-@keyframes wave-anim {
-  0% { height: 6px; }
-  100% { height: 28px; }
-}
-
-.font-mono {
-  font-family: var(--font-mono);
+::-webkit-scrollbar-thumb:hover {
+  background: #234235;
 }

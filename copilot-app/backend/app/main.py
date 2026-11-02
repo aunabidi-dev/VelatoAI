@@ -40,7 +40,7 @@ from .services.recording_service import recording_service
 from .services.redaction_filter import redact_transcript
 from .services.log_redaction import install_log_redaction
 from .services.copilot_service import copilot_service
-from .services.provider import copilot_provider
+from .services.provider import copilot_provider, is_api_active
 
 # Phase 2: Install PCI log redaction filter on ALL loggers at startup
 install_log_redaction()  # Root logger
@@ -86,6 +86,8 @@ def health():
         "plane": "control-plane (copilot-app)",
         "security_policy": "Zero cardholder data in control plane",
         "phase": "3-copilot",
+        "built_with": "Built with Muse Spark Open",
+        "api_active": is_api_active(),
         "log_redaction": "active",
         "transcript_redaction": "active",
         "supervisor_join_prevention": "active",

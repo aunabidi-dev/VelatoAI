@@ -9,7 +9,7 @@ volumes:
     driver: local
 
 services:
-  # 1. PostgreSQL Database with pgvector (Business records, tokens, audit logs, embeddings)
+  # 1. PostgreSQL Database with Full-Text Search (Business records, tokens, audit logs, knowledge base)
   postgres:
     image: ankane/pgvector:v0.5.1
     container_name: zytasafe-postgres
@@ -44,7 +44,7 @@ services:
       - pci-data-plane-net
     restart: unless-stopped
 
-  # 3. Isolated Payment Microservice (Zero-Trust Data Plane)
+  # 3. Isolated Payment Microservice (Zero-Trust Data Plane - Meta Model Ecosystem)
   payment-service:
     build:
       context: ./payment-service
@@ -58,9 +58,13 @@ services:
       - LIVEKIT_URL=${LIVEKIT_URL:-http://livekit:7880}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+      - META_STT_ENGINE=${META_STT_ENGINE:-spark_open_audio}
+      - META_TTS_MODEL=${META_TTS_MODEL:-facebook/mms-tts-eng}
     read_only: true # Enforce read-only filesystem for PCI compliance
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
+    volumes:
+      - ./payment-service/app:/app/app:ro
     networks:
       - pci-data-plane-net
       - control-plane-net
@@ -68,7 +72,7 @@ services:
       - livekit
     restart: unless-stopped
 
-  # 4. Control Plane Backend (FastAPI, CRM, Copilot, Audit Trail)
+  # 4. Control Plane Backend (FastAPI, CRM, Copilot, Audit Trail - Muse Spark Open)
   copilot-backend:
     build:
       context: ./copilot-app/backend
@@ -83,7 +87,12 @@ services:
       - LIVEKIT_URL=${LIVEKIT_URL:-http://livekit:7880}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
-      - COPILOT_PROVIDER=${COPILOT_PROVIDER:-local}
+      - COPILOT_PROVIDER=${COPILOT_PROVIDER:-spark_open}
+      - API_ACTIVE=${API_ACTIVE:-false}
+      - BASETEN_API_KEY=${BASETEN_API_KEY:-}
+      - BASETEN_SPARK_OPEN_URL=${BASETEN_SPARK_OPEN_URL:-}
+    volumes:
+      - ./copilot-app/backend/app:/app/app
     depends_on:
       postgres:
         condition: service_healthy
@@ -106,6 +115,11 @@ services:
     environment:
       - BACKEND_URL=http://copilot-backend:8000
       - PAYMENT_URL=http://payment-service:8001
+    volumes:
+      - ./copilot-app/frontend/src:/app/src
+      - ./copilot-app/frontend/public:/app/public
+      - ./copilot-app/frontend/index.html:/app/index.html
+      - ./copilot-app/frontend/tailwind.config.js:/app/tailwind.config.js
     depends_on:
       - copilot-backend
       - payment-service
