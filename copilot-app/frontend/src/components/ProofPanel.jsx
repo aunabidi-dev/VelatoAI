@@ -166,13 +166,13 @@ export default function ProofPanel({
   return (
     <div className="w-full max-w-5xl mx-auto flex flex-col gap-6">
       {/* Proof Header with 60-Second Security Story Action */}
-      <div className="glass-panel p-6 border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-6 border-[#1A2824] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <ShieldCheck className="w-6 h-6 text-cyan-400" />
-            <h2 className="text-lg font-bold text-slate-100">Zero-Trust PCI Security & Leak Proof</h2>
+            <ShieldCheck className="w-6 h-6 text-[#00E676]" />
+            <h2 className="text-lg font-bold text-[#EDF3F0]">Zero-Trust PCI Security & Leak Proof</h2>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-[#768782] mt-1">
             Real-time verification: Database, transcripts, logs and memory are scanned for raw PAN numbers.
           </p>
         </div>
@@ -182,10 +182,10 @@ export default function ProofPanel({
           <button
             onClick={runSecurityStory}
             disabled={isStoryRunning}
-            className="flex-1 md:flex-initial bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white font-bold px-4 py-2 rounded-lg text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-950/40 border border-cyan-400/30"
+            className="flex-1 md:flex-initial bg-[#0B2A1E] hover:bg-[#12402E] text-[#00E676] font-bold px-4 py-2 rounded-lg text-xs flex items-center justify-center gap-2 transition-all border border-[#165038]"
             title="Runs an automated 60-second end-to-end security proof demonstration for auditors & hackathon judges"
           >
-            <Sparkles className={`w-4 h-4 ${isStoryRunning ? 'animate-spin text-amber-300' : 'text-cyan-200'}`} />
+            <Sparkles className={`w-4 h-4 ${isStoryRunning ? 'animate-spin text-amber-300' : 'text-[#00E676]'}`} />
             <span>{isStoryRunning ? `Running Story: Step ${storyStep}/5...` : '▶ Run 60-Second Security Story'}</span>
           </button>
 
@@ -193,7 +193,7 @@ export default function ProofPanel({
           <button
             onClick={handleScan}
             disabled={isScanning}
-            className="flex-1 md:flex-initial bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 font-bold px-4 py-2 rounded-lg text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-cyan-950/30"
+            className="flex-1 md:flex-initial bg-[#00E676] hover:bg-[#00C853] text-[#070B0A] disabled:opacity-50 text-[#070B0A] font-bold px-4 py-2 rounded-lg text-xs flex items-center justify-center gap-2 transition-all "
           >
             <Search className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
             <span>{isScanning ? 'Scanning Tables...' : 'Run Automated Leak Scan'}</span>
@@ -203,30 +203,30 @@ export default function ProofPanel({
 
       {/* Guided 60-Second Security Story Progress HUD */}
       {storyStep > 0 && (
-        <div className="glass-panel p-4 border-indigo-500/40 bg-indigo-950/30 flex flex-col gap-2 rounded-xl">
+        <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-4 border-[#165038]/40 bg-[#0B261B]/30 flex flex-col gap-2 rounded-xl">
           <div className="flex items-center justify-between text-xs font-mono">
-            <span className="text-indigo-300 font-bold flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-cyan-400" />
+            <span className="text-[#34D399] font-bold flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-[#00E676]" />
               60-SECOND PCI COMPLIANCE STORY WALKTHROUGH
             </span>
-            <span className="text-cyan-400">
+            <span className="text-[#00E676]">
               {storyStep === 6 ? "✔ STORY COMPLETE (COMPLIANT)" : `Step ${storyStep} of 5`}
             </span>
           </div>
           <div className="grid grid-cols-5 gap-2 text-[10px] font-mono mt-1">
-            <div className={`p-2 rounded border ${storyStep >= 1 ? 'bg-cyan-950/80 border-cyan-500/60 text-cyan-200' : 'bg-slate-900 border-slate-800 text-slate-500'}`}>
+            <div className={`p-2 rounded border ${storyStep >= 1 ? 'bg-[#0B261B]/80 border-[#165038]/60 text-[#00E676]' : 'bg-[#070B0A] border-[#1A2824] text-[#768782]'}`}>
               1. Normal Call Audio
             </div>
-            <div className={`p-2 rounded border ${storyStep >= 2 ? 'bg-cyan-950/80 border-cyan-500/60 text-cyan-200' : 'bg-slate-900 border-slate-800 text-slate-500'}`}>
+            <div className={`p-2 rounded border ${storyStep >= 2 ? 'bg-[#0B261B]/80 border-[#165038]/60 text-[#00E676]' : 'bg-[#070B0A] border-[#1A2824] text-[#768782]'}`}>
               2. Audio Severed (&lt;45ms)
             </div>
-            <div className={`p-2 rounded border ${storyStep >= 3 ? 'bg-cyan-950/80 border-cyan-500/60 text-cyan-200' : 'bg-slate-900 border-slate-800 text-slate-500'}`}>
+            <div className={`p-2 rounded border ${storyStep >= 3 ? 'bg-[#0B261B]/80 border-[#165038]/60 text-[#00E676]' : 'bg-[#070B0A] border-[#1A2824] text-[#768782]'}`}>
               3. Memory Zeroization
             </div>
-            <div className={`p-2 rounded border ${storyStep >= 4 ? 'bg-cyan-950/80 border-cyan-500/60 text-cyan-200' : 'bg-slate-900 border-slate-800 text-slate-500'}`}>
+            <div className={`p-2 rounded border ${storyStep >= 4 ? 'bg-[#0B261B]/80 border-[#165038]/60 text-[#00E676]' : 'bg-[#070B0A] border-[#1A2824] text-[#768782]'}`}>
               4. Gap Marker Stamped
             </div>
-            <div className={`p-2 rounded border ${storyStep >= 5 ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-200' : 'bg-slate-900 border-slate-800 text-slate-500'}`}>
+            <div className={`p-2 rounded border ${storyStep >= 5 ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-200' : 'bg-[#070B0A] border-[#1A2824] text-[#768782]'}`}>
               5. 0 Leaks Verified
             </div>
           </div>
@@ -235,7 +235,7 @@ export default function ProofPanel({
 
       {/* Leak Scan Status Result HUD */}
       {scanResults && (
-        <div className="glass-panel p-4 border-emerald-500/40 bg-emerald-950/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-4 border-emerald-500/40 bg-emerald-950/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
             <div>
@@ -255,51 +255,51 @@ export default function ProofPanel({
       )}
 
       {/* Latency Tuning & Telemetry Benchmarks Card */}
-      <div className="glass-panel p-4 border-slate-800 bg-slate-950/60 flex flex-col gap-3">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+      <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-4 border-[#1A2824] bg-slate-950/60 flex flex-col gap-3">
+        <div className="flex items-center justify-between border-b border-[#1A2824] pb-2">
           <div className="flex items-center gap-2">
-            <Zap className="w-4 h-4 text-cyan-400" />
-            <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+            <Zap className="w-4 h-4 text-[#00E676]" />
+            <h3 className="text-xs font-bold text-[#EDF3F0] uppercase tracking-wider">
               Real-Time Latency & Performance Telemetry
             </h3>
           </div>
-          <span className="text-[10px] font-mono text-cyan-400/80 bg-cyan-950/50 px-2 py-0.5 rounded border border-cyan-800/60">
+          <span className="text-[10px] font-mono text-[#00E676]/80 bg-[#0B261B]/50 px-2 py-0.5 rounded border border-[#165038]">
             Speed Targets Met (&lt;2.0s Copilot / &lt;100ms Cut)
           </span>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {/* Metric 1: Copilot TTFT */}
-          <div className="bg-slate-900/70 p-3 rounded-lg border border-slate-800">
-            <span className="text-[10px] uppercase font-mono text-slate-400 block">Copilot Suggestion</span>
-            <div className="text-base font-bold font-mono text-cyan-300 mt-0.5">
+          <div className="bg-[#070B0A]/70 p-3 rounded-lg border border-[#1A2824]">
+            <span className="text-[10px] uppercase font-mono text-[#768782] block">Copilot Suggestion</span>
+            <div className="text-base font-bold font-mono text-[#00E676] mt-0.5">
               {latencyData?.copilot_suggestion?.avg_ms || 145}ms
             </div>
             <span className="text-[10px] text-emerald-400 font-mono">Target: &lt; 2,000ms</span>
           </div>
 
           {/* Metric 2: Safe Mode Severance */}
-          <div className="bg-slate-900/70 p-3 rounded-lg border border-slate-800">
-            <span className="text-[10px] uppercase font-mono text-slate-400 block">Safe Mode Audio Severance</span>
-            <div className="text-base font-bold font-mono text-cyan-300 mt-0.5">
+          <div className="bg-[#070B0A]/70 p-3 rounded-lg border border-[#1A2824]">
+            <span className="text-[10px] uppercase font-mono text-[#768782] block">Safe Mode Audio Severance</span>
+            <div className="text-base font-bold font-mono text-[#00E676] mt-0.5">
               {callState?.isolation_latency_ms || latencyData?.audio_isolation?.p95_ms || 42.0}ms
             </div>
             <span className="text-[10px] text-emerald-400 font-mono">Target: &lt; 100ms</span>
           </div>
 
           {/* Metric 3: Luhn Check & Tokenizer */}
-          <div className="bg-slate-900/70 p-3 rounded-lg border border-slate-800">
-            <span className="text-[10px] uppercase font-mono text-slate-400 block">Luhn Check & Tokenizer</span>
-            <div className="text-base font-bold font-mono text-cyan-300 mt-0.5">
+          <div className="bg-[#070B0A]/70 p-3 rounded-lg border border-[#1A2824]">
+            <span className="text-[10px] uppercase font-mono text-[#768782] block">Luhn Check & Tokenizer</span>
+            <div className="text-base font-bold font-mono text-[#00E676] mt-0.5">
               {latencyData?.tokenization_and_luhn?.p95_ms || 18.5}ms
             </div>
             <span className="text-[10px] text-emerald-400 font-mono">Target: &lt; 500ms</span>
           </div>
 
           {/* Metric 4: Leak Scanner Benchmark */}
-          <div className="bg-slate-900/70 p-3 rounded-lg border border-slate-800">
-            <span className="text-[10px] uppercase font-mono text-slate-400 block">Multi-Store Leak Scan</span>
-            <div className="text-base font-bold font-mono text-cyan-300 mt-0.5">
+          <div className="bg-[#070B0A]/70 p-3 rounded-lg border border-[#1A2824]">
+            <span className="text-[10px] uppercase font-mono text-[#768782] block">Multi-Store Leak Scan</span>
+            <div className="text-base font-bold font-mono text-[#00E676] mt-0.5">
               {scanResults?.scan_duration_ms || latencyData?.leak_scanner?.last_scan_ms || 6.2}ms
             </div>
             <span className="text-[10px] text-emerald-400 font-mono">Full DB/Log Scan</span>
@@ -310,47 +310,47 @@ export default function ProofPanel({
       {/* Comparison Grid: Dynamic Insider vs Attacker */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Card 1: What Human Agent & QA Sees */}
-        <div className="glass-panel p-5 border-slate-800 flex flex-col gap-3">
+        <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-5 border-[#1A2824] flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase font-mono tracking-wider">
-              <FileCheck className="w-4 h-4 text-cyan-400" />
+            <div className="flex items-center gap-2 text-xs font-bold text-[#C0D0CB] uppercase font-mono tracking-wider">
+              <FileCheck className="w-4 h-4 text-[#00E676]" />
               What Human Agent & QA Sees:
             </div>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#0B261B] text-[#00E676] border border-[#165038]">
               Control Plane View
             </span>
           </div>
 
-          <div className="bg-slate-950 p-4 rounded-lg border border-slate-800/80 font-mono text-xs text-slate-300 flex flex-col gap-2">
+          <div className="bg-slate-950 p-4 rounded-lg border border-[#1A2824]/80 font-mono text-xs text-[#C0D0CB] flex flex-col gap-2">
             <div className="flex justify-between">
-              <span className="text-slate-500">Screen Status:</span>
-              <span className={isCompleted ? "text-emerald-400 font-bold" : (isSafeMode ? "text-rose-400 font-bold" : "text-cyan-300")}>
+              <span className="text-[#768782]">Screen Status:</span>
+              <span className={isCompleted ? "text-emerald-400 font-bold" : (isSafeMode ? "text-rose-400 font-bold" : "text-[#00E676]")}>
                 {isCompleted ? "Payment Completed" : (isSafeMode ? "Safe Mode (Isolated)" : "Call Connected")}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Gateway Token Ref:</span>
-              <span className="text-cyan-400 font-bold break-all">{activeToken}</span>
+              <span className="text-[#768782]">Gateway Token Ref:</span>
+              <span className="text-[#00E676] font-bold break-all">{activeToken}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Card Display:</span>
-              <span className="text-slate-200 font-semibold">{activeCard}</span>
+              <span className="text-[#768782]">Card Display:</span>
+              <span className="text-[#EDF3F0] font-semibold">{activeCard}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Agent Audio Packet:</span>
+              <span className="text-[#768782]">Agent Audio Packet:</span>
               <span className={isSafeMode ? "text-rose-400 font-bold" : "text-emerald-400"}>
                 {agentAudioState}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Call Audio Recording:</span>
+              <span className="text-[#768782]">Call Audio Recording:</span>
               <span className="text-amber-400">{paymentSegmentStatus}</span>
             </div>
           </div>
         </div>
 
         {/* Card 2: What an Attacker / Memory Dump Captures */}
-        <div className="glass-panel p-5 border-slate-800 flex flex-col gap-3">
+        <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-5 border-[#1A2824] flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs font-bold text-rose-300 uppercase font-mono tracking-wider">
               <Lock className="w-4 h-4 text-rose-400" />
@@ -363,24 +363,28 @@ export default function ProofPanel({
 
           <div className="bg-slate-950 p-4 rounded-lg border border-rose-950/40 font-mono text-xs text-rose-300 flex flex-col gap-2">
             <div className="flex justify-between">
-              <span className="text-slate-500">Control Plane Log:</span>
+              <span className="text-[#768782]">Control Plane Log:</span>
               <span className="text-emerald-400 font-bold">No card payload allowed (100% Redacted)</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Agent RTP Audio Stream:</span>
+              <span className="text-[#768782]">Agent RTP Audio Stream:</span>
               <span className="text-rose-300 font-bold">Severed at Media Router (0 Packets)</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Payment Service Heap:</span>
+              <span className="text-[#768782]">Payment Service Heap:</span>
               <span className="text-emerald-400 font-bold">0x00 0x00 (ZEROIZED IMMEDIATELY)</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Database Search:</span>
+              <span className="text-[#768782]">Database Search:</span>
               <span className="text-emerald-400 font-bold">0 matches for 16-digit PAN</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">PCI DSS Scope Reduction:</span>
-              <span className="text-cyan-300 font-bold">Contact center completely de-scoped</span>
+              <span className="text-[#768782]">Card Path AI Models:</span>
+              <span className="text-[#00E676] font-bold">100% Meta Open-Weight (Spark Open & MMS)</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[#768782]">PCI DSS Scope Reduction:</span>
+              <span className="text-[#00E676] font-bold">Contact center completely de-scoped</span>
             </div>
           </div>
         </div>
@@ -394,11 +398,11 @@ export default function ProofPanel({
       />
 
       {/* Cryptographically Verifiable Append-Only Audit Trail Table */}
-      <div className="glass-panel p-5 border-slate-800 flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+      <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-5 border-[#1A2824] flex flex-col gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-[#1A2824] pb-3">
           <div className="flex items-center gap-2">
-            <Terminal className="w-4 h-4 text-cyan-400" />
-            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+            <Terminal className="w-4 h-4 text-[#00E676]" />
+            <h3 className="text-xs font-bold text-[#C0D0CB] uppercase tracking-wider">
               Append-Only Security Audit Trail (SHA-256 Verifiable)
             </h3>
           </div>
@@ -419,7 +423,7 @@ export default function ProofPanel({
             {/* Export JSON */}
             <button
               onClick={() => handleExportAudit('json')}
-              className="text-[11px] font-mono text-cyan-300 hover:text-white px-2 py-1 rounded bg-slate-900 border border-slate-700 hover:border-cyan-500/40 transition-colors flex items-center gap-1"
+              className="text-[11px] font-mono text-[#00E676] hover:text-white px-2 py-1 rounded bg-[#070B0A] border border-[#22322F] hover:border-[#165038]/40 transition-colors flex items-center gap-1"
               title="Download full JSON audit log with SHA-256 signatures"
             >
               <Download className="w-3 h-3" />
@@ -429,7 +433,7 @@ export default function ProofPanel({
             {/* Export CSV */}
             <button
               onClick={() => handleExportAudit('csv')}
-              className="text-[11px] font-mono text-cyan-300 hover:text-white px-2 py-1 rounded bg-slate-900 border border-slate-700 hover:border-cyan-500/40 transition-colors flex items-center gap-1"
+              className="text-[11px] font-mono text-[#00E676] hover:text-white px-2 py-1 rounded bg-[#070B0A] border border-[#22322F] hover:border-[#165038]/40 transition-colors flex items-center gap-1"
               title="Download CSV audit log for compliance spreadsheet"
             >
               <Download className="w-3 h-3" />
@@ -443,7 +447,7 @@ export default function ProofPanel({
                   await onRefreshAudit();
                   await fetchChainVerification();
                 }}
-                className="text-[11px] font-mono text-slate-400 hover:text-cyan-300 p-1 rounded bg-slate-900 border border-slate-800 transition-colors"
+                className="text-[11px] font-mono text-[#768782] hover:text-[#00E676] p-1 rounded bg-[#070B0A] border border-[#1A2824] transition-colors"
                 title="Refresh Audit Trail"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
@@ -454,30 +458,30 @@ export default function ProofPanel({
 
         {/* Filter Pills Bar */}
         <div className="flex items-center gap-1.5 overflow-x-auto text-[11px] font-mono pb-1">
-          <Filter className="w-3 h-3 text-slate-500 shrink-0" />
-          <span className="text-slate-500 text-[10px] uppercase">Filter:</span>
+          <Filter className="w-3 h-3 text-[#768782] shrink-0" />
+          <span className="text-[#768782] text-[10px] uppercase">Filter:</span>
           {['ALL', 'SAFE_MODE', 'TOKENS', 'REDACTION'].map(filterKey => (
             <button
               key={filterKey}
               onClick={() => setActiveFilter(filterKey)}
               className={`px-2.5 py-0.5 rounded transition-colors ${
                 activeFilter === filterKey
-                  ? 'bg-cyan-500 text-slate-950 font-bold'
-                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                  ? 'bg-[#00E676] text-[#070B0A] font-bold'
+                  : 'bg-[#070B0A] text-[#768782] hover:text-[#EDF3F0] border border-[#1A2824]'
               }`}
             >
               {filterKey}
             </button>
           ))}
-          <span className="text-[10px] text-slate-500 ml-auto">
+          <span className="text-[10px] text-[#768782] ml-auto">
             Showing {filteredEvents.length} events
           </span>
         </div>
 
         {/* Audit Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs font-mono text-slate-300">
-            <thead className="text-[11px] text-slate-500 uppercase border-b border-slate-800">
+          <table className="w-full text-left text-xs font-mono text-[#C0D0CB]">
+            <thead className="text-[11px] text-[#768782] uppercase border-b border-[#1A2824]">
               <tr>
                 <th className="py-2 px-3">Event ID</th>
                 <th className="py-2 px-3">Type</th>
@@ -490,20 +494,20 @@ export default function ProofPanel({
             <tbody className="divide-y divide-slate-800/60">
               {filteredEvents && filteredEvents.length > 0 ? (
                 [...filteredEvents].reverse().map((evt, idx) => (
-                  <tr key={idx} className="hover:bg-slate-900/40">
-                    <td className="py-2.5 px-3 text-slate-400">{evt.id}</td>
-                    <td className="py-2.5 px-3 text-cyan-300 font-bold">{evt.event_type}</td>
-                    <td className="py-2.5 px-3 text-cyan-400 font-medium">{evt.token_ref || "—"}</td>
-                    <td className="py-2.5 px-3 text-slate-200">{evt.last4 ? `**** ${evt.last4}` : "—"}</td>
-                    <td className="py-2.5 px-3 text-slate-400 text-[11px]">{evt.details || "—"}</td>
-                    <td className="py-2.5 px-3 text-[10px] text-slate-500 font-mono">
+                  <tr key={idx} className="hover:bg-[#070B0A]/40">
+                    <td className="py-2.5 px-3 text-[#768782]">{evt.id}</td>
+                    <td className="py-2.5 px-3 text-[#00E676] font-bold">{evt.event_type}</td>
+                    <td className="py-2.5 px-3 text-[#00E676] font-medium">{evt.token_ref || "—"}</td>
+                    <td className="py-2.5 px-3 text-[#EDF3F0]">{evt.last4 ? `**** ${evt.last4}` : "—"}</td>
+                    <td className="py-2.5 px-3 text-[#768782] text-[11px]">{evt.details || "—"}</td>
+                    <td className="py-2.5 px-3 text-[10px] text-[#768782] font-mono">
                       {evt.hash ? `${evt.hash.slice(0, 8)}…${evt.hash.slice(-6)}` : "GENESIS"}
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="6" className="py-4 text-center text-slate-500">
+                  <td colSpan="6" className="py-4 text-center text-[#768782]">
                     No matching events recorded. Trigger PCI Safe Mode to generate verifiable audit entries.
                   </td>
                 </tr>

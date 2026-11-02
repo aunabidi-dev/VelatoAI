@@ -1,20 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Shield, ShieldAlert, ShieldCheck, Mic, MicOff, Lock, AlertCircle,
-  FileText, Bot, CheckCircle2, MessageSquare, Zap, ChevronRight, Send, Sparkles, RotateCcw
+  Shield, Lock, Mic, MicOff, Volume2, VolumeX, Play, Pause,
+  Download, Send, Sparkles, Lightbulb, FileText, ExternalLink,
+  Info, Maximize2, RotateCcw, PhoneCall, ChevronDown, CheckCircle2,
+  Bot, AlertTriangle, ArrowRight, User, Tag, XCircle
 } from 'lucide-react';
 import { soundFx } from './AudioSynthesizer';
 
-/**
- * AgentDesktop — Phase 3 Enhanced
- * 
- * Phase 3 additions:
- *  - Live transcript feed: shows rolling customer & agent utterances
- *  - Structured copilot suggestions: suggestion + source doc citation + confidence bar
- *  - Interactive prompt pills for instant testing (Pricing, Refund, Cancellation, Payment)
- *  - One-click "Speak As Agent" button to insert copilot recommendation into transcript
- *  - Real-time HTTP + WebSocket dual-channel updates
- */
 export default function AgentDesktop({
   callState,
   onTriggerSafeMode,
@@ -24,29 +16,39 @@ export default function AgentDesktop({
   paymentResult,
   auditMarkers,
   wsRef,
+  onOpenCustomerPhone,
+  paymentSession,
 }) {
-  const [seconds, setSeconds] = useState(48);
-
+  const isSafeMode = Boolean(callState?.safe_mode_active || callState?.agent_isolated);
+  const [seconds, setSeconds] = useState(125); // 02:05 default matching mockup
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [isRecordingPlaying, setIsRecordingPlaying] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
   const [transcriptLines, setTranscriptLines] = useState([
-    { speaker: 'customer', text: 'Hi, I need help with my subscription billing.', ts: Date.now() - 45000 },
-    { speaker: 'agent',    text: 'Of course! I can help with that. Could you confirm your account email?', ts: Date.now() - 30000 },
-    { speaker: 'customer', text: 'Sure, it\'s jane.doe@example.com. I wanted to upgrade and pay for the annual plan.', ts: Date.now() - 15000 },
+    { speaker: 'customer', text: 'Hi, I need help with my subscription billing...', ts: '11:38:35' },
+    { speaker: 'agent',    text: 'Of course! I can help with that. Could you confirm your account email?', ts: '11:38:53' },
+    { speaker: 'customer', text: "Sure, it's jane.doe@example.com. I wanted to upgrade and pay for the annual plan.", ts: '11:39:08' },
   ]);
   const [liveSuggestion, setLiveSuggestion] = useState(null);
   const [isThinking, setIsThinking] = useState(false);
-  const [demoInput, setDemoInput] = useState('');
+  const [inputMessage, setInputMessage] = useState('');
   const transcriptEndRef = useRef(null);
+  const recTimerRef = useRef(null);
 
+  // Call duration ticker
   useEffect(() => {
     const timer = setInterval(() => setSeconds(s => s + 1), 1000);
     return () => clearInterval(timer);
   }, []);
 
+  // Auto-scroll transcript
   useEffect(() => {
-    transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [transcriptLines]);
+    if (autoScroll) {
+      transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [transcriptLines, autoScroll]);
 
-  // WebSocket message listener
+  // WebSocket message listener for live suggestions
   useEffect(() => {
     const ws = wsRef?.current;
     if (!ws) return;
@@ -64,14 +66,14 @@ export default function AgentDesktop({
             setLiveSuggestion({
               suggestion: msg.suggestion,
               sourceDocTitle: msg.source_doc_title || null,
-              confidence: msg.confidence ?? 0,
-              model: msg.model || 'Local Copilot',
+              confidence: msg.confidence ?? 0.85,
+              model: msg.model || 'Muse Spark Open (Baseten)',
               redacted: msg.redacted || false,
               blackout: false,
             });
           }
         }
-      } catch (e) { /* ignore parse errors */ }
+      } catch (e) { }
     };
 
     ws.addEventListener('message', handleMessage);
@@ -85,428 +87,586 @@ export default function AgentDesktop({
     }
   }, [copilotBlackout]);
 
-  const formatTime = (totalSeconds) => {
-    const m = Math.floor(totalSeconds / 60);
-    const s = totalSeconds % 60;
+  const formatDuration = (totalSec) => {
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const formatTs = (ts) => {
-    const d = new Date(ts);
-    return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
-  };
+  const handleSendUtterance = async (text, speaker = 'customer') => {
+    if (!text.trim()) return;
+    const now = new Date();
+    const tsStr = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
 
-  // Send an utterance to the live call & trigger copilot
-  const handleSendTranscript = async (text, speaker = 'customer') => {
-    if (!text || !text.trim()) return;
-    const cleanText = text.trim();
-    const line = { speaker, text: cleanText, ts: Date.now() };
-    setTranscriptLines(prev => [...prev.slice(-19), line]);
-    setDemoInput('');
+    setTranscriptLines(prev => [...prev, { speaker, text: text.trim(), ts: tsStr }]);
 
-    // If the agent is speaking, we just append to transcript without re-querying copilot
-    if (speaker === 'agent') {
-      return;
-    }
-
-    // If the customer utterance has no letters or numbers (e.g., just "?" or punctuation),
-    // keep the current copilot suggestion active rather than resetting to fallback.
-    const hasAlphanumeric = /[a-zA-Z0-9]/.test(cleanText);
-    if (!hasAlphanumeric) {
-      return;
-    }
-
-    setIsThinking(true);
-
-    // 1. Send via WebSocket if connected
-    const ws = wsRef?.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'TRANSCRIPT_CHUNK',
-        text: cleanText,
-        speaker: 'customer',
-        call_id: callState.call_id,
-      }));
-    }
-
-    // 2. Also call HTTP endpoint for immediate guaranteed local response
-    try {
-      const res = await fetch('/api/copilot/transcript', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ call_id: callState.call_id, speaker: 'customer', text: cleanText }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setIsThinking(false);
-        if (!data.blackout && data.suggestion) {
-          setLiveSuggestion({
-            suggestion: data.suggestion,
-            sourceDocTitle: data.source_doc_title || null,
-            confidence: data.confidence ?? 0,
-            model: data.model || 'Local Copilot',
-            redacted: data.redacted || false,
-            blackout: false,
-          });
+    // Only customer speech triggers the live copilot suggestion
+    if (speaker === 'customer') {
+      setIsThinking(true);
+      try {
+        const res = await fetch('/api/copilot/transcript', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            call_id: callState.call_id || 'call_meta_hackathon_01',
+            speaker: 'customer',
+            text: text.trim(),
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setIsThinking(false);
+          if (data.blackout) {
+            setLiveSuggestion(null);
+          } else {
+            setLiveSuggestion({
+              suggestion: data.suggestion,
+              sourceDocTitle: data.source_doc_title || null,
+              confidence: data.confidence ?? 0.85,
+              model: data.model || 'Muse Spark Open (Baseten)',
+              redacted: data.redacted || false,
+              blackout: false,
+            });
+          }
         }
+      } catch (e) {
+        setIsThinking(false);
       }
-    } catch (e) {
-      setIsThinking(false);
     }
   };
+
+  const handleInsertScriptAsAgent = () => {
+    const textToInsert = liveSuggestion?.suggestion || copilotSuggestion;
+    if (textToInsert && !copilotBlackout) {
+      handleSendUtterance(textToInsert, 'agent');
+    }
+  };
+
+  // Recording preview playback toggle with Web Audio synthesizer
+  const toggleRecordingPlay = () => {
+    if (isRecordingPlaying) {
+      setIsRecordingPlaying(false);
+      soundFx.stopRecordedAudioHum();
+      if (recTimerRef.current) clearInterval(recTimerRef.current);
+    } else {
+      setIsRecordingPlaying(true);
+      if (!isSafeMode) {
+        soundFx.startRecordedAudioHum();
+      }
+      recTimerRef.current = setInterval(() => {
+        setRecordingTime(prev => {
+          if (prev >= seconds) {
+            setIsRecordingPlaying(false);
+            soundFx.stopRecordedAudioHum();
+            clearInterval(recTimerRef.current);
+            return 0;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    }
+  };
+
+  // Mute audio during Safe Mode if recording is playing
+  useEffect(() => {
+    if (isRecordingPlaying) {
+      if (isSafeMode) {
+        soundFx.stopRecordedAudioHum();
+      } else {
+        soundFx.startRecordedAudioHum();
+      }
+    }
+  }, [isSafeMode, isRecordingPlaying]);
+
+  // Clean up Web Audio on unmount
+  useEffect(() => {
+    return () => {
+      soundFx.stopRecordedAudioHum();
+      if (recTimerRef.current) clearInterval(recTimerRef.current);
+    };
+  }, []);
 
   const activeSuggestion = liveSuggestion?.suggestion || copilotSuggestion;
   const activeSourceDoc = liveSuggestion?.sourceDocTitle || null;
-  const activeModel = liveSuggestion?.model || 'Local Copilot';
-  const activeConfidence = liveSuggestion?.confidence ?? 0.85;
 
   return (
-    <div className="flex flex-col gap-6 w-full max-w-4xl mx-auto">
-      {/* Top Header Card */}
-      <div className="glass-panel p-5 flex items-center justify-between border-slate-800">
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <div className={`w-3 h-3 rounded-full ${callState.agent_isolated ? 'bg-rose-500 animate-pulse' : 'bg-emerald-400 animate-ping'}`} />
-            <div className={`w-3 h-3 rounded-full absolute top-0 left-0 ${callState.agent_isolated ? 'bg-rose-500' : 'bg-emerald-400'}`} />
-          </div>
-          <div>
+    <div className="flex flex-col gap-5 w-full max-w-[1400px] mx-auto pb-8">
+      {/* ── ROW 1: Top 3 Status & Action Cards ─────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Card 1: Agent Screen (5 cols) */}
+        <div className="lg:col-span-5 bg-[#0E1614] border border-[#1A2824] rounded-2xl p-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold text-slate-100">Call with Jane Doe</h2>
-              <span className="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono">
-                {callState.call_id || 'call_live_01'}
-              </span>
+              <span className={`w-2 h-2 rounded-full ${isSafeMode ? 'bg-rose-500 animate-pulse' : 'bg-[#00E676]'}`} />
+              <span className="text-xs font-medium text-[#768782]">Agent Screen</span>
             </div>
-            <p className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
-              <span>Account: Premium Enterprise</span> •{' '}
-              <span className="font-mono text-cyan-400 font-medium">Duration: {formatTime(seconds)}</span>
-            </p>
-          </div>
-        </div>
-
-        {/* Audio Route Indicator */}
-        <div className="flex items-center gap-3">
-          {callState.agent_isolated ? (
-            <div className="flex items-center gap-2 bg-rose-950/80 border border-rose-500/40 text-rose-300 px-3 py-1.5 rounded-lg text-xs font-semibold">
-              <MicOff className="w-4 h-4 text-rose-400 animate-pulse" />
-              <span>AGENT AUDIO SEVERED (ZERO TRANSMIT)</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 px-3 py-1.5 rounded-lg text-xs font-semibold">
-              <Mic className="w-4 h-4 text-emerald-400" />
-              <span>BIDIRECTIONAL AUDIO ACTIVE</span>
-            </div>
-          )}
-
-          {/* Safe Mode Trigger Button */}
-          {!callState.agent_isolated && !paymentResult && (
-            <button
-              onClick={() => {
-                soundFx.playSafeModeBeep();
-                onTriggerSafeMode();
-              }}
-              className="btn-safe-mode"
-              title="Isolate audio line and hand over to secure AI payment agent"
-            >
-              <Shield className="w-5 h-5 fill-rose-100/20" />
-              <span>PCI Safe Mode</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Left Column: CRM Details & Live Transcript */}
-        <div className="md:col-span-2 flex flex-col gap-6">
-          {/* Isolation HUD when in Safe Mode */}
-          {callState.agent_isolated ? (
-            <div className="glass-panel-isolated p-6 flex flex-col items-center justify-center text-center gap-4 py-12 relative overflow-hidden">
-              <div className="absolute top-2 right-3 text-[10px] font-mono tracking-widest text-rose-400/80 uppercase">
-                PCI DSS Scope: Zero Agent Audio
-              </div>
-              <div className="w-16 h-16 rounded-full bg-rose-500/20 border border-rose-500 flex items-center justify-center animate-pulse">
-                <Lock className="w-8 h-8 text-rose-400" />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-rose-200">PAYMENT IN PROGRESS</h3>
-                <p className="text-sm text-rose-300/80 max-w-md mt-1">
-                  Your audio line and screen are strictly isolated. The AI Voice Agent is collecting customer payment details directly in a separate VPC container.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 text-xs bg-black/40 border border-rose-500/30 text-rose-200 px-4 py-2 rounded-full font-mono mt-2">
-                <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-                <span>Customer is speaking card credentials to Voice AI...</span>
-              </div>
-
-              {onCancelSafeMode && (
-                <button
-                  type="button"
-                  onClick={onCancelSafeMode}
-                  className="mt-3 text-xs text-rose-300 hover:text-white bg-rose-950/70 hover:bg-rose-900/90 border border-rose-600/60 px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 shadow"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Cancel Safe Mode (Return to Normal Call)</span>
-                </button>
-              )}
-            </div>
-          ) : paymentResult ? (
-            /* Post-Payment Tokenized HUD */
-            <div className="glass-panel p-6 border-emerald-500/40 bg-emerald-950/20 flex flex-col gap-4">
-              <div className="flex items-center justify-between border-b border-emerald-500/20 pb-3">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-6 h-6 text-emerald-400" />
-                  <h3 className="text-base font-bold text-emerald-300">PCI Safe Mode Completed</h3>
-                </div>
-                <span className="text-[11px] font-mono bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded border border-emerald-500/30">
-                  ZERO CARD DATA HELD
-                </span>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
-                <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800">
-                  <div className="text-[10px] uppercase text-slate-400 font-mono">Gateway Token</div>
-                  <div className="text-sm font-bold text-cyan-300 font-mono mt-1 break-all">{paymentResult.token}</div>
-                </div>
-                <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800">
-                  <div className="text-[10px] uppercase text-slate-400 font-mono">Card Brand</div>
-                  <div className="text-sm font-bold text-slate-100 mt-1">{paymentResult.brand || 'Visa'}</div>
-                </div>
-                <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800">
-                  <div className="text-[10px] uppercase text-slate-400 font-mono">Card Digits</div>
-                  <div className="text-sm font-bold text-slate-100 font-mono mt-1">**** {paymentResult.last4}</div>
-                </div>
-                <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800">
-                  <div className="text-[10px] uppercase text-slate-400 font-mono">Memory State</div>
-                  <div className="text-sm font-bold text-emerald-400 font-mono mt-1 flex items-center gap-1">
-                    <ShieldCheck className="w-4 h-4" /> ZEROIZED
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* Normal CRM Screen */
-            <div className="glass-panel p-6 border-slate-800 flex flex-col gap-4">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-cyan-400" />
-                  Order & Subscription Details
-                </h3>
-                <span className="text-xs text-slate-400">Invoice #INV-2026-891</span>
-              </div>
-              <div className="flex justify-between items-center py-2 text-sm text-slate-300">
-                <span>Annual Cloud AI Plan (Tier 1)</span>
-                <span className="font-mono font-bold text-slate-100">$49.99 / mo</span>
-              </div>
-              <div className="flex justify-between items-center py-2 text-sm text-slate-400 border-t border-slate-800/60">
-                <span>Total Due Now</span>
-                <span className="font-mono font-bold text-cyan-400 text-base">$49.99</span>
-              </div>
-              <div className="bg-cyan-950/20 border border-cyan-500/20 p-3 rounded-lg text-xs text-cyan-300 flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-cyan-400 mt-0.5" />
-                <span>When customer indicates readiness to pay, inform them to wait for the beep, then click <strong>PCI Safe Mode</strong>.</span>
-              </div>
-            </div>
-          )}
-
-          {/* Call Recording Timeline Player */}
-          <div className="glass-panel p-4 border-slate-800 flex flex-col gap-3">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-mono text-slate-400 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-red-500" />
-                LIVE CALL RECORDING (FOR QA & COMPLIANCE)
-              </span>
-              <span className="text-slate-500 text-[11px] font-mono">Server-Enforced Stream</span>
-            </div>
-            <div className="w-full bg-slate-900 h-9 rounded-md overflow-hidden relative flex items-center px-2 border border-slate-800">
-              <div className="h-5 bg-cyan-600/40 border border-cyan-500/60 rounded flex items-center justify-center text-[10px] font-mono text-cyan-200 px-3 w-1/3">
-                Live Audio (Normal)
-              </div>
-              {(callState.agent_isolated || paymentResult) && (
-                <div className="h-5 bg-amber-500/20 border border-amber-500/50 rounded flex items-center justify-center text-[10px] font-mono text-amber-300 px-3 mx-2 animate-pulse">
-                  ⚠ PCI Audio Withheld (tok_pci...)
-                </div>
-              )}
-              {paymentResult && (
-                <div className="h-5 bg-cyan-600/40 border border-cyan-500/60 rounded flex items-center justify-center text-[10px] font-mono text-cyan-200 px-3 flex-1">
-                  Resumed Audio
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Phase 3: Live Transcript Feed */}
-          {!callState.agent_isolated && (
-            <div className="glass-panel p-4 border-slate-800 flex flex-col gap-3">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4 text-cyan-400" />
-                  <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Live Call Audio Transcript</h3>
-                </div>
-                <span className="text-[10px] text-cyan-400/80 font-mono flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-cyan-400" />
-                  Auto-feeder to Live Copilot
-                </span>
-              </div>
-
-              {/* Transcript lines */}
-              <div className="max-h-40 overflow-y-auto flex flex-col gap-1.5 pr-1">
-                {transcriptLines.map((line, idx) => (
-                  <div key={idx} className={`flex gap-2 text-[11px] ${line.speaker === 'agent' ? 'flex-row-reverse' : ''}`}>
-                    <span className={`font-mono text-[9px] shrink-0 mt-0.5 font-bold ${line.speaker === 'agent' ? 'text-cyan-400' : 'text-slate-400'}`}>
-                      {line.speaker === 'agent' ? 'AGENT' : 'CUSTOMER'}
-                    </span>
-                    <div className={`rounded-lg px-2.5 py-1.5 max-w-[85%] leading-relaxed ${
-                      line.speaker === 'agent'
-                        ? 'bg-cyan-950/60 border border-cyan-800/80 text-cyan-100 shadow-sm'
-                        : 'bg-slate-800/80 border border-slate-700/80 text-slate-200'
-                    }`}>
-                      {line.text}
-                    </div>
-                    <span className="text-[9px] text-slate-500 font-mono shrink-0 mt-auto mb-0.5">{formatTs(line.ts)}</span>
-                  </div>
-                ))}
-                <div ref={transcriptEndRef} />
-              </div>
-
-              {/* Quick Prompt Pills for Demo */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pt-1 pb-0.5 text-[11px]">
-                <span className="text-[10px] uppercase font-mono text-slate-500 shrink-0">Demo Prompts:</span>
-                <button
-                  type="button"
-                  onClick={() => handleSendTranscript("Can you provide me pricing and discount guide?", "customer")}
-                  className="shrink-0 px-2 py-0.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-md text-cyan-300 text-[11px] transition-colors"
-                >
-                  🏷️ "Pricing & discount guide?"
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSendTranscript("What is your refund policy?", "customer")}
-                  className="shrink-0 px-2 py-0.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-md text-cyan-300 text-[11px] transition-colors"
-                >
-                  ↩️ "Refund policy?"
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSendTranscript("I want to cancel my subscription", "customer")}
-                  className="shrink-0 px-2 py-0.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-md text-cyan-300 text-[11px] transition-colors"
-                >
-                  ❌ "Cancel subscription"
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSendTranscript("I am ready to pay with my card now", "customer")}
-                  className="shrink-0 px-2 py-0.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-md text-emerald-300 text-[11px] transition-colors"
-                >
-                  💳 "Ready to pay"
-                </button>
-              </div>
-
-              {/* Demo transcript input */}
-              <div className="flex gap-2 pt-1 border-t border-slate-800/60">
-                <input
-                  type="text"
-                  value={demoInput}
-                  onChange={e => setDemoInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSendTranscript(demoInput, 'customer')}
-                  placeholder="Speak or type what the customer says (e.g. pricing, discounts, refunds)..."
-                  className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-colors"
-                />
-                <button
-                  onClick={() => handleSendTranscript(demoInput, 'customer')}
-                  disabled={!demoInput.trim() || isThinking}
-                  className="bg-cyan-600/40 hover:bg-cyan-600/70 disabled:opacity-30 border border-cyan-500/50 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5"
-                >
-                  <Send className="w-3 h-3" />
-                  <span>Send</span>
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right Column: Live Copilot Assistance Panel */}
-        <div className="glass-panel p-5 border-slate-800 flex flex-col gap-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2">
-              <Bot className="w-5 h-5 text-cyan-400" />
-              <h3 className="text-sm font-bold text-slate-200">Live Support Copilot</h3>
-            </div>
-            <span className="text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800 px-2 py-0.5 rounded">
-              {activeModel.length > 20 ? activeModel.slice(0, 18) + '…' : activeModel}
+            <span className={`text-[11px] font-mono px-2.5 py-0.5 rounded-full border ${isSafeMode ? 'bg-rose-950 text-rose-300 border-rose-500/40' : 'bg-[#0B2A1E] text-[#00E676] border-[#165038]'}`}>
+              {isSafeMode ? "Severed Line" : "Control Plane"}
             </span>
           </div>
 
-          {copilotBlackout ? (
-            <div className="bg-rose-950/40 border border-rose-500/30 p-4 rounded-xl flex flex-col items-center justify-center text-center gap-2 py-8">
-              <ShieldAlert className="w-8 h-8 text-rose-400 animate-bounce" />
-              <div className="text-xs font-bold text-rose-300 uppercase tracking-wider">
-                Copilot Blackout Enforced
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-[#131E1B] border border-[#1E302B] flex items-center justify-center text-[#00E676]">
+                <User className="w-5 h-5" />
               </div>
-              <p className="text-[11px] text-rose-400/80">
-                Transcription and suggestions are completely paused during PCI Safe Mode.
+              <div>
+                <h3 className="text-sm font-semibold text-[#EDF3F0]">Call with {callState?.customer_name || 'Jane Doe'}</h3>
+                <p className="text-xs text-[#768782] mt-0.5">
+                  Account: Premium Enterprise • <span className="font-mono text-[#00E676]">Duration: {formatDuration(seconds)}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pl-2">
+              {isSafeMode ? (
+                <div className="flex items-center gap-1.5 text-rose-400 font-mono text-xs">
+                  <MicOff className="w-4 h-4 animate-pulse" />
+                  <span className="hidden sm:inline">Audio Severed</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 text-[#00E676] font-mono text-xs">
+                  <div className="flex items-center gap-0.5">
+                    <span className="w-0.5 h-3 bg-[#00E676] animate-pulse"></span>
+                    <span className="w-0.5 h-4 bg-[#00E676] animate-pulse" style={{ animationDelay: '150ms' }}></span>
+                    <span className="w-0.5 h-2 bg-[#00E676] animate-pulse" style={{ animationDelay: '300ms' }}></span>
+                  </div>
+                  <span className="hidden sm:inline">Bidirectional Audio Active</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Card 2: PCI SAFE MODE (Prominent Hero Toggle) (3 cols) */}
+        <div
+          onClick={() => {
+            if (isSafeMode) {
+              if (onCancelSafeMode) onCancelSafeMode();
+            } else {
+              soundFx.playSafeModeBeep();
+              if (onTriggerSafeMode) onTriggerSafeMode();
+            }
+          }}
+          className={`lg:col-span-3 rounded-2xl p-4 flex items-center justify-between border cursor-pointer transition-all select-none ${
+            isSafeMode
+              ? 'bg-[#181013] border-rose-500/50'
+              : 'bg-[#0E1614] border-[#1A2824] hover:border-[#233B34]'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center border transition-colors ${
+              isSafeMode
+                ? 'bg-rose-950 text-rose-400 border-rose-500/40'
+                : 'bg-[#0B261B] text-[#00E676] border-[#174D36]'
+            }`}>
+              <Shield className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="text-xs font-bold tracking-wider uppercase text-[#EDF3F0]">PCI SAFE MODE</div>
+              <div className="text-[11px] text-[#768782]">
+                {isSafeMode ? "Audio isolated at server" : "Ready to intercept"}
+              </div>
+            </div>
+          </div>
+
+          {/* Toggle Switch */}
+          <div
+            role="switch"
+            aria-checked={isSafeMode}
+            className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 flex items-center ${
+              isSafeMode ? 'bg-[#00E676] justify-end' : 'bg-[#1A2824] justify-start'
+            }`}
+            title={isSafeMode ? "Safe Mode is Active. Click to cancel." : "Click to engage PCI Safe Mode."}
+          >
+            <div className={`w-6 h-6 rounded-full shadow-sm transform transition-transform duration-300 flex items-center justify-center ${
+              isSafeMode ? 'bg-[#070B0A] text-[#00E676]' : 'bg-[#4B5E58] text-[#0E1614]'
+            }`}>
+              {isSafeMode ? (
+                <Lock className="w-3.5 h-3.5" />
+              ) : (
+                <Shield className="w-3.5 h-3.5" />
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Card 3: Customer Caller (4 cols) */}
+        <div className="lg:col-span-4 bg-[#0E1614] border border-[#1A2824] rounded-2xl p-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[#00E676]" />
+              <span className="text-xs font-medium text-[#768782]">Customer Caller</span>
+            </div>
+            <button
+              onClick={onOpenCustomerPhone}
+              className="text-xs font-mono text-[#EDF3F0] hover:text-[#00E676] flex items-center gap-1 bg-[#131E1B] px-2.5 py-0.5 rounded-lg border border-[#1E302B] transition-colors"
+              title="Open responsive Customer Phone simulator"
+            >
+              <span>{callState?.customer_name || 'Jane Doe'}</span>
+              <ChevronDown className="w-3 h-3 text-[#768782]" />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-[#0B261B] border border-[#174D36] flex items-center justify-center text-[#00E676]">
+                <PhoneCall className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-[#EDF3F0]">Call with Support</h3>
+                <p className="text-xs text-[#768782]">
+                  {isSafeMode ? (
+                    <span className="text-[#00E676] font-mono">Connected to Voice AI (Safe Mode)</span>
+                  ) : (
+                    "Connected to Agent Alice"
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {/* Simulated Live Audio Waveform */}
+            <div className="flex items-center gap-2">
+              <Volume2 className="w-4 h-4 text-[#768782]" />
+              <div className="flex items-center gap-0.5">
+                {[4, 8, 14, 10, 6, 12, 16, 9, 5, 11, 7, 3].map((h, i) => (
+                  <span
+                    key={i}
+                    style={{ height: `${h}px` }}
+                    className={`w-0.5 rounded-full transition-all ${
+                      isSafeMode ? 'bg-[#00E676] animate-pulse' : 'bg-[#00E676]/80'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── ROW 2: Main Workspace (Billing & Recording + Transcript | Copilot) ─── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* Left Column: Billing Details, Recording Player, Live Transcript (7 cols) */}
+        <div className="lg:col-span-7 flex flex-col gap-4">
+          {/* Card: Order & Subscription Details */}
+          <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#1A2824] mb-3">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-[#00E676]" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#EDF3F0]">Order & Subscription Details</h4>
+              </div>
+              <span className="text-[11px] font-mono text-[#768782] flex items-center gap-1 hover:text-[#00E676] cursor-pointer">
+                <span>Invoice #INV-2026-891</span>
+                <ExternalLink className="w-3 h-3" />
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between py-1">
+              <div className="flex items-center gap-2 text-xs text-[#EDF3F0]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#00E676]" />
+                <span>Annual Cloud AI Plan (Tier 1)</span>
+              </div>
+              <span className="text-xs font-mono text-[#EDF3F0] font-medium">$49.99 / mo</span>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 mt-2 border-t border-[#1A2824]">
+              <span className="text-xs text-[#768782]">Total Due Now</span>
+              <span className="text-base font-bold font-mono text-[#00E676]">$49.99</span>
+            </div>
+
+            {/* Informational Guidance Box */}
+            <div className="mt-3 p-2.5 rounded-xl bg-[#0B2117] border border-[#154531] flex items-start gap-2.5">
+              <Info className="w-4 h-4 text-[#00E676] shrink-0 mt-0.5" />
+              <p className="text-xs text-[#C0D0CB] leading-relaxed">
+                When customer indicates readiness to pay, inform them to wait for the beep, then click <strong className="text-[#00E676]">PCI Safe Mode</strong>.
               </p>
             </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {/* Thinking indicator */}
-              {isThinking && (
-                <div className="flex items-center gap-2 text-[11px] text-cyan-400 animate-pulse bg-cyan-950/30 border border-cyan-500/20 p-2 rounded-lg">
-                  <Zap className="w-3.5 h-3.5" />
-                  <span>Searching knowledge base and formulating suggestion...</span>
-                </div>
-              )}
+          </div>
 
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-slate-400 uppercase font-mono tracking-wider">
-                  Real-Time Suggested Action:
+          {/* Card: Live Call Recording (For QA & Compliance) */}
+          <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-4">
+            <div className="flex items-center justify-between pb-2 mb-2">
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${isSafeMode ? 'bg-amber-400' : 'bg-rose-500'}`} />
+                <span className="text-xs font-semibold text-[#EDF3F0]">
+                  Live Call Recording <span className="text-[#768782] font-normal">(For QA & Compliance)</span>
                 </span>
-                {activeConfidence !== null && (
-                  <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/60 border border-cyan-800/80 px-2 py-0.5 rounded-full font-bold">
-                    {Math.round(activeConfidence * 100)}% match
-                  </span>
-                )}
               </div>
+              <span className="text-[11px] font-mono text-[#768782] flex items-center gap-1">
+                <span>Server: US-East-1</span>
+              </span>
+            </div>
 
-              {/* Suggestion Card */}
-              <div className="bg-slate-900/90 border border-cyan-500/40 p-3.5 rounded-xl text-xs text-slate-200 leading-relaxed shadow-lg shadow-cyan-950/30 whitespace-pre-line">
-                {activeSuggestion}
-              </div>
+            {/* Scrub Bar & Controls */}
+            <div className="flex items-center gap-3 mt-1">
+              <button
+                onClick={toggleRecordingPlay}
+                className="w-8 h-8 rounded-lg bg-[#131E1B] hover:bg-[#1E302B] text-[#00E676] flex items-center justify-center transition-colors shrink-0"
+                title={isRecordingPlaying ? "Pause Audio Preview" : "Play Audio Preview"}
+              >
+                {isRecordingPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+              </button>
 
-              {/* One-Click Action: Speak As Agent */}
-              {!isThinking && activeSuggestion && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const cleanReply = activeSuggestion.split('\n\n📄')[0];
-                    handleSendTranscript(cleanReply, 'agent');
+              {/* Scrubber Slider */}
+              <div className="flex-1 flex flex-col gap-1 relative">
+                <input
+                  type="range"
+                  min="0"
+                  max={seconds || 125}
+                  value={recordingTime}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setRecordingTime(val);
                   }}
-                  className="bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/50 text-cyan-200 px-3 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all hover:border-cyan-400 active:scale-95 shadow-sm"
-                  title="Speak this answer to the customer in the call transcript"
-                >
-                  <Send className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Speak As Agent (Insert into Call Transcript)</span>
-                </button>
-              )}
+                  className="w-full accent-[#00E676] bg-[#1A2824] h-1.5 rounded-full cursor-pointer appearance-none"
+                  style={{
+                    background: `linear-gradient(to right, #00E676 0%, #00E676 ${(recordingTime / (seconds || 1)) * 100}%, #1A2824 ${(recordingTime / (seconds || 1)) * 100}%, #1A2824 100%)`
+                  }}
+                />
+              </div>
 
-              {/* Source doc citation (Phase 3) */}
-              {activeSourceDoc && (
-                <div className="bg-slate-900/60 border border-indigo-500/40 p-2.5 rounded-lg text-[11px] text-slate-300 flex items-start gap-2">
-                  <FileText className="w-3.5 h-3.5 shrink-0 text-indigo-400 mt-0.5" />
-                  <div>
-                    <span className="text-[10px] text-indigo-400 uppercase font-mono block">Grounded Reference:</span>
-                    <strong className="text-indigo-200">{activeSourceDoc}</strong>
+              <span className="text-[11px] font-mono text-[#768782] shrink-0">
+                {formatDuration(recordingTime)} / {formatDuration(seconds)}
+              </span>
+
+              <button
+                onClick={() => {
+                  if (isRecordingPlaying) {
+                    soundFx.stopRecordedAudioHum();
+                    setIsRecordingPlaying(false);
+                  }
+                }}
+                className="text-[#768782] hover:text-[#EDF3F0] transition-colors p-1"
+                title="Mute / Stop Audio"
+              >
+                <Volume2 className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={() => {
+                  const blob = new Blob([JSON.stringify({
+                    call_id: callState?.call_id,
+                    duration_seconds: seconds,
+                    pci_safe_mode_engaged: isSafeMode,
+                    audio_manifest: "Compliant Zero-Trust - PCI Segment Withheld",
+                    token: paymentResult?.token || null
+                  }, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `audit_manifest_${callState?.call_id}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="text-[#768782] hover:text-[#00E676] transition-colors p-1"
+                title="Export Compliant Audio Manifest"
+              >
+                <Download className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Card: Live Call Audio Transcript */}
+          <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between pb-2 border-b border-[#1A2824]">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-[#00E676]" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#EDF3F0]">Live Call Audio Transcript</h4>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 text-xs text-[#768782]">
+                  <span className="text-[11px]">Auto-scroll</span>
+                  <button
+                    onClick={() => setAutoScroll(prev => !prev)}
+                    className={`w-7 h-4 rounded-full p-0.5 transition-colors ${autoScroll ? 'bg-[#00E676]' : 'bg-[#1A2824]'}`}
+                  >
+                    <div className={`w-3 h-3 rounded-full bg-[#070B0A] transform transition-transform ${autoScroll ? 'translate-x-3' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+                <button className="text-[#768782] hover:text-[#EDF3F0] p-0.5" title="Expand View">
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable Transcript Messages */}
+            <div className="h-48 overflow-y-auto pr-2 flex flex-col gap-2.5 font-sans text-xs">
+              {transcriptLines.map((line, idx) => (
+                <div key={idx} className="flex flex-col gap-0.5">
+                  <div className="flex items-center justify-between text-[10px] text-[#768782]">
+                    <span className={line.speaker === 'agent' ? 'text-[#00E676] font-semibold' : 'text-[#34D399] font-medium'}>
+                      {line.speaker === 'agent' ? 'Agent' : 'Customer'}
+                    </span>
+                    <span className="font-mono">{line.ts}</span>
+                  </div>
+                  <div className={`p-2.5 rounded-xl leading-relaxed ${
+                    line.speaker === 'agent'
+                      ? 'bg-[#10241C] border border-[#194532] text-[#EDF3F0]'
+                      : 'bg-[#111A18] border border-[#1A2A25] text-[#D2DED9]'
+                  }`}>
+                    {line.text}
                   </div>
                 </div>
-              )}
-
-              {/* Redaction notice */}
-              {liveSuggestion?.redacted && (
-                <div className="text-[10px] text-amber-400/90 font-mono flex items-center gap-1.5 bg-amber-950/30 border border-amber-800/50 p-2 rounded-lg">
-                  <Shield className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span>PAN detected in customer speech — masked before copilot processing</span>
-                </div>
-              )}
+              ))}
+              <div ref={transcriptEndRef} />
             </div>
-          )}
+
+            {/* Demo Prompts Bar */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="text-[10px] uppercase font-mono text-[#768782] mr-1">Demo Prompts:</span>
+              <button
+                onClick={() => handleSendUtterance("What is the annual pricing and discount rate?", 'customer')}
+                className="px-2.5 py-1 rounded-lg bg-[#111C19] hover:bg-[#182B24] border border-[#1E332B] text-[11px] text-[#00E676] transition-colors flex items-center gap-1.5"
+              >
+                <Tag className="w-3 h-3 text-[#00E676]" />
+                <span>Pricing & discount guide</span>
+              </button>
+              <button
+                onClick={() => handleSendUtterance("Can I get a refund if I cancel my subscription?", 'customer')}
+                className="px-2.5 py-1 rounded-lg bg-[#111C19] hover:bg-[#182B24] border border-[#1E332B] text-[11px] text-[#768782] hover:text-[#EDF3F0] transition-colors flex items-center gap-1.5"
+              >
+                <FileText className="w-3 h-3 text-[#34D399]" />
+                <span>Refund policy guidelines</span>
+              </button>
+              <button
+                onClick={() => handleSendUtterance("I want to cancel my subscription right now", 'customer')}
+                className="px-2.5 py-1 rounded-lg bg-[#111C19] hover:bg-[#182B24] border border-[#1E332B] text-[11px] text-[#768782] hover:text-[#EDF3F0] transition-colors flex items-center gap-1.5"
+              >
+                <XCircle className="w-3 h-3 text-rose-400" />
+                <span>Cancellation protocol</span>
+              </button>
+            </div>
+
+            {/* Input Bar */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (inputMessage.trim()) {
+                  handleSendUtterance(inputMessage, 'customer');
+                  setInputMessage('');
+                }
+              }}
+              className="flex items-center gap-2 mt-1"
+            >
+              <input
+                type="text"
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                placeholder="Ask a question or send a response template..."
+                className="flex-1 bg-[#131E1B] border border-[#1A2824] focus:border-[#00E676] text-xs text-[#EDF3F0] rounded-xl px-3 py-2.5 outline-none transition-colors placeholder:text-[#4B5A55]"
+              />
+              <button
+                type="submit"
+                disabled={!inputMessage.trim()}
+                className="w-9 h-9 rounded-xl bg-[#00E676] hover:bg-[#00C853] disabled:opacity-40 text-[#070B0A] flex items-center justify-center transition-all shrink-0 font-bold"
+              >
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </form>
+          </div>
+        </div>
+
+        {/* Right Column: Live Support Copilot (5 cols) */}
+        <div className="lg:col-span-5 flex flex-col gap-4">
+          <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-5 flex flex-col gap-4">
+            {/* Copilot Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-[#1A2824]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-[#0B261B] border border-[#174D36] flex items-center justify-center text-[#00E676]">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[#EDF3F0]">Live Support Copilot</h3>
+                  <div className="text-[10px] text-[#768782] font-mono">Real-Time Knowledge Retrieval</div>
+                </div>
+              </div>
+              <span className="text-[10px] font-mono bg-[#0B2A1E] text-[#00E676] border border-[#165038] px-2.5 py-0.5 rounded-full">
+                Muse Spark Open
+              </span>
+            </div>
+
+            {/* Blackout State during Safe Mode */}
+            {isSafeMode ? (
+              <div className="bg-[#181013] border border-rose-500/40 p-5 rounded-xl flex flex-col items-center justify-center text-center gap-3 py-8">
+                <Shield className="w-10 h-10 text-rose-400 animate-pulse" />
+                <div>
+                  <div className="text-xs font-bold text-rose-300 uppercase tracking-wider">
+                    Copilot Blackout Enforced
+                  </div>
+                  <p className="text-[11px] text-rose-400/80 mt-1 max-w-xs">
+                    Zero-Trust Protocol Active: LLM inference, transcript ingest, and suggestions are severed until tokenization completes.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs text-[#768782]">
+                    <span className="w-2 h-2 rounded-full bg-[#00E676] animate-pulse" />
+                    <span className="text-[10px] uppercase font-mono tracking-wider font-semibold">Real-Time Suggested Action</span>
+                  </div>
+                  <span className="text-[10px] font-mono bg-[#0B2A1E] text-[#00E676] border border-[#165038] px-2 py-0.5 rounded-full">
+                    85% Match
+                  </span>
+                </div>
+
+                {/* Suggestion Card */}
+                <div className="p-4 rounded-xl bg-[#111C19] border border-[#1A2C27] text-xs text-[#EDF3F0] leading-relaxed flex flex-col gap-2">
+                  <div className="flex items-start gap-2.5">
+                    <Lightbulb className="w-4 h-4 text-[#00E676] shrink-0 mt-0.5" />
+                    <div>
+                      {isThinking ? (
+                        <span className="text-[#768782] italic">Grounding against company documents via Muse Spark Open...</span>
+                      ) : (
+                        activeSuggestion
+                      )}
+                    </div>
+                  </div>
+
+                  {activeSourceDoc && (
+                    <div className="text-[10px] font-mono text-[#768782] border-t border-[#1C2C28] pt-2 mt-1 flex items-center gap-1.5">
+                      <FileText className="w-3 h-3 text-[#34D399]" />
+                      <span>Document Citation:</span>
+                      <span className="text-[#34D399]">{activeSourceDoc}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Speak As Agent Action Button */}
+                <button
+                  onClick={handleInsertScriptAsAgent}
+                  className="w-full py-2.5 px-4 rounded-xl bg-[#0B2A1E] hover:bg-[#12402E] border border-[#165038] text-[#00E676] font-semibold text-xs flex items-center justify-center gap-2 transition-all"
+                  title="Insert this recommendation directly into the agent script turn"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Speak As Agent (Insert into Call Transcript)</span>
+                </button>
+              </div>
+            )}
+
+            {/* Payment Token Receipt HUD (when token acquired) */}
+            {paymentResult && (
+              <div className="p-3.5 rounded-xl bg-[#0B261B] border border-[#174D36] flex flex-col gap-1.5">
+                <div className="flex items-center justify-between text-xs font-bold text-[#00E676]">
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4" />
+                    Payment Token Acquired
+                  </span>
+                  <span className="font-mono text-[11px] bg-[#131E1B] px-2 py-0.5 rounded text-white">
+                    {paymentResult.brand || 'Visa'}
+                  </span>
+                </div>
+                <div className="text-xs font-mono text-[#EDF3F0] flex justify-between pt-1">
+                  <span className="text-[#768782]">Card Number:</span>
+                  <span>**** **** **** {paymentResult.last4 || '4242'}</span>
+                </div>
+                <div className="text-xs font-mono text-[#EDF3F0] flex justify-between">
+                  <span className="text-[#768782]">Gateway Token:</span>
+                  <span className="text-[#34D399] break-all">{paymentResult.token}</span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

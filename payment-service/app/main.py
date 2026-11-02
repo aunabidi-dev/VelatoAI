@@ -18,7 +18,7 @@ import logging
 
 from .core.state_machine import PaymentSession, PaymentState
 from .core.token_vault import vault
-from .core.whisper_stt import whisper_engine
+from .core.meta_speech_stt import meta_speech_engine, whisper_engine
 from .core.log_redaction import install_log_redaction
 
 # Phase 2: Install PCI log redaction filter on ALL loggers at startup
@@ -62,6 +62,8 @@ def health():
     return {
         "status": "healthy",
         "service": "payment-service (Zero-Trust Data Plane)",
+        "models": "100% Meta Open-Weight (Muse Spark Open Audio / Meta wav2vec 2.0 / Meta MMS TTS)",
+        "tts_engine": "Meta MMS TTS (Fallback: Browser Native Web Speech)",
         "memory_sanitization": "enforced",
         "pci_dss_scope": "isolated",
         "phase": "2-hardened",
@@ -130,7 +132,7 @@ def submit_cvv(session_id: str, req: InputRequest):
 @app.post("/api/payment/session/{session_id}/audio")
 async def submit_audio(session_id: str, file: UploadFile = File(...)):
     """
-    Receives raw spoken audio from customer, runs Whisper CPU STT,
+    Receives raw spoken audio from customer, runs Muse Spark Open / Meta wav2vec 2.0 STT,
     and advances payment session state machine.
     """
     session = ACTIVE_SESSIONS.get(session_id)
@@ -146,7 +148,7 @@ async def submit_audio(session_id: str, file: UploadFile = File(...)):
         }
 
     audio_bytes = await file.read()
-    stt_res = whisper_engine.process_spoken_card(
+    stt_res = meta_speech_engine.process_spoken_card(
         audio_bytes,
         existing_digits=session.buffer.get_pan_raw()
     )

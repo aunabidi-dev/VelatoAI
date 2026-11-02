@@ -464,19 +464,19 @@ export default function CustomerPhone({
   const isLuhnValid = cleanDigitsCount >= 13 && checkLuhn(cleanDigits);
 
   return (
-    <div className="w-full max-w-md mx-auto glass-panel p-6 border-slate-800 flex flex-col gap-5 relative">
+    <div className="w-full max-w-md mx-auto bg-[#0E1614] border border-[#1A2824] rounded-2xl p-6 flex flex-col gap-5 relative text-[#EDF3F0]">
       {/* Phone Header */}
-      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+      <div className="flex items-center justify-between border-b border-[#1A2824] pb-3">
         <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-full ${safeModeActive ? 'bg-cyan-500/20 text-cyan-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+          <div className={`p-2 rounded-xl ${safeModeActive ? 'bg-[#1C1417] text-rose-400 border border-rose-500/30' : 'bg-[#0B261B] text-[#00E676] border border-[#165038]'}`}>
             <PhoneCall className="w-5 h-5 animate-pulse" />
           </div>
           <div>
-            <div className="text-sm font-bold text-slate-100">
+            <div className="text-sm font-bold text-[#EDF3F0]">
               {safeModeActive ? "ZytaSafe Automated Pay" : "Call with Support"}
             </div>
-            <div className="text-[11px] text-slate-400 font-mono">
-              {safeModeActive ? "Voice AI Isolated Data Plane" : "Connected to Agent Alice"}
+            <div className="text-[11px] text-[#768782] font-mono">
+              {safeModeActive ? "Voice AI Isolated Data Plane (Meta MMS TTS / Browser Native Voice)" : "Connected to Agent Alice"}
             </div>
           </div>
         </div>
@@ -486,28 +486,28 @@ export default function CustomerPhone({
           <button
             onClick={() => soundFx.playSafeModeBeep()}
             title="Test Beep Sound"
-            className="p-1 rounded bg-slate-900 border border-slate-700 text-slate-400 hover:text-cyan-400 text-[10px] flex items-center gap-1"
+            className="p-1.5 rounded-lg bg-[#0B261B] border border-[#165038] text-[#768782] hover:text-[#00E676] text-[10px] flex items-center gap-1 transition-colors"
           >
             <Bell className="w-3 h-3" />
             <span>Beep</span>
           </button>
-          <span className="text-[10px] font-mono bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-slate-400">
+          <span className="text-[10px] font-mono bg-[#0B261B] border border-[#165038] px-2 py-0.5 rounded text-[#768782]">
             Caller: Jane Doe
           </span>
         </div>
       </div>
 
       {/* Voice Visualizer */}
-      <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 flex flex-col items-center justify-center gap-2">
+      <div className="bg-[#070B0A] border border-[#1A2824] rounded-xl p-4 flex flex-col items-center justify-center gap-2">
         <div className="flex items-center gap-1.5 h-8">
-          <div className={`wave-bar ${isListening ? 'bg-rose-400' : 'bg-cyan-400'}`} style={{ animationDelay: '0.1s' }}></div>
-          <div className={`wave-bar ${isListening ? 'bg-rose-400' : 'bg-cyan-400'}`} style={{ animationDelay: '0.3s' }}></div>
-          <div className={`wave-bar ${isListening ? 'bg-rose-400' : 'bg-cyan-400'}`} style={{ animationDelay: '0.2s' }}></div>
-          <div className={`wave-bar ${isListening ? 'bg-rose-400' : 'bg-cyan-400'}`} style={{ animationDelay: '0.4s' }}></div>
-          <div className={`wave-bar ${isListening ? 'bg-rose-400' : 'bg-cyan-400'}`} style={{ animationDelay: '0.15s' }}></div>
+          <div className={`wave-bar ${isListening ? 'bg-rose-400' : 'bg-[#00E676]'}`} style={{ animationDelay: '0.1s' }}></div>
+          <div className={`wave-bar ${isListening ? 'bg-rose-400' : 'bg-[#00E676]'}`} style={{ animationDelay: '0.3s' }}></div>
+          <div className={`wave-bar ${isListening ? 'bg-rose-400' : 'bg-[#00E676]'}`} style={{ animationDelay: '0.2s' }}></div>
+          <div className={`wave-bar ${isListening ? 'bg-rose-400' : 'bg-[#00E676]'}`} style={{ animationDelay: '0.4s' }}></div>
+          <div className={`wave-bar ${isListening ? 'bg-rose-400' : 'bg-[#00E676]'}`} style={{ animationDelay: '0.15s' }}></div>
         </div>
-        <span className="text-[11px] text-slate-400 font-mono flex items-center gap-1.5">
-          <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
+        <span className="text-[11px] text-[#768782] font-mono flex items-center gap-1.5">
+          <Volume2 className="w-3.5 h-3.5 text-[#00E676]" />
           {isListening ? (
             <span className="text-rose-400 font-semibold animate-pulse">
               {paymentSessionData?.state === "CONFIRMING"
@@ -515,7 +515,7 @@ export default function CustomerPhone({
                 : "Microphone Active • Listening..."}
             </span>
           ) : safeModeActive ? (
-            "AI Voice Agent Active (Audio Isolated)"
+            <span className="text-[#00E676]">AI Voice Agent Active (Audio Isolated)</span>
           ) : (
             "Agent Voice Active"
           )}
@@ -526,19 +526,19 @@ export default function CustomerPhone({
       {safeModeActive && (
         <div className="flex flex-col gap-4">
           {/* AI Voice Prompt Dialogue Bubble */}
-          <div className="bg-cyan-950/40 border border-cyan-500/30 p-3.5 rounded-xl text-xs text-cyan-100 leading-relaxed shadow-lg flex items-start gap-2.5">
-            <Sparkles className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+          <div className="bg-[#0B261B] border border-[#165038] p-3.5 rounded-xl text-xs text-[#EDF3F0] leading-relaxed  flex items-start gap-2.5">
+            <Sparkles className="w-4 h-4 text-[#00E676] shrink-0 mt-0.5" />
             <div>
-              <span className="font-bold text-cyan-300 block mb-1">Automated Voice Agent:</span>
+              <span className="font-bold text-[#00E676] block mb-1">Automated Voice Agent:</span>
               <p>{paymentSessionData?.prompt || "Please speak your 16-digit card number after the tone."}</p>
             </div>
           </div>
 
           {/* Captured Card Metadata Badge (Strictly Last 4 only) */}
           {paymentSessionData?.last4 && (
-            <div className="bg-slate-900/90 border border-emerald-500/30 p-2.5 rounded-lg text-xs font-mono flex items-center justify-between">
-              <span className="text-slate-400">Verified Card:</span>
-              <span className="text-emerald-400 font-bold">
+            <div className="bg-[#0D1614] border border-[#165038] p-2.5 rounded-lg text-xs font-mono flex items-center justify-between">
+              <span className="text-[#768782]">Verified Card:</span>
+              <span className="text-[#00E676] font-bold">
                 {paymentSessionData.brand || "Card"} ending in **** {paymentSessionData.last4}
               </span>
             </div>
@@ -546,14 +546,14 @@ export default function CustomerPhone({
 
           {/* PROMINENT SPEAK BUTTON & INPUT CONTROLS (Active across all capture states, including CONFIRMING) */}
           {paymentSessionData?.state !== "COMPLETED" && (
-            <div className="flex flex-col gap-2.5 bg-slate-900/70 border border-slate-800 p-3.5 rounded-xl">
+            <div className="flex flex-col gap-2.5 bg-[#0D1614] border border-[#1A2824] p-3.5 rounded-xl">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-mono text-slate-300 font-bold flex items-center gap-1.5">
-                  <Radio className={`w-3.5 h-3.5 ${isListening ? 'text-rose-400 animate-ping' : 'text-cyan-400'}`} />
+                <span className="text-[11px] font-mono text-[#EDF3F0] font-bold flex items-center gap-1.5">
+                  <Radio className={`w-3.5 h-3.5 ${isListening ? 'text-rose-400 animate-ping' : 'text-[#00E676]'}`} />
                   Live Voice Microphone:
                 </span>
                 {cleanDigitsCount > 0 && paymentSessionData?.state === "CAPTURING_PAN" && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded font-bold bg-cyan-950 text-cyan-300">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded font-bold bg-[#0B261B] text-[#00E676] border border-[#165038]">
                     {cleanDigitsCount} Digits Heard
                   </span>
                 )}
@@ -563,10 +563,10 @@ export default function CustomerPhone({
               <button
                 type="button"
                 onClick={toggleMicrophone}
-                className={`w-full py-2.5 px-4 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md ${
+                className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all  ${
                   isListening
                     ? 'bg-rose-600 hover:bg-rose-500 text-white animate-pulse border border-rose-400'
-                    : 'bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white border border-cyan-400/30'
+                    : 'bg-[#00E676] hover:bg-[#00C853] text-[#070B0A] font-bold '
                 }`}
               >
                 {isListening ? (
@@ -610,14 +610,14 @@ export default function CustomerPhone({
                       ? "Say or type: 1 2 3..."
                       : "Say or type: Yes..."
                   }
-                  className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+                  className="flex-1 bg-[#070B0A] border border-[#1A2824] focus:border-[#00E676] rounded-xl px-3 py-2 text-xs text-[#EDF3F0] placeholder:text-[#768782] focus:outline-none font-mono"
                 />
 
                 <button
                   type="button"
                   onClick={() => handleCustomSubmit()}
                   disabled={!customInput.trim()}
-                  className="bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-bold px-3 py-2 rounded-lg text-xs flex items-center gap-1 transition-all"
+                  className="bg-[#00E676] hover:bg-[#00C853] disabled:opacity-40 text-[#070B0A] font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 transition-all"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span>Send</span>
@@ -629,32 +629,32 @@ export default function CustomerPhone({
           {/* Quick-Action Presets for Fast Testing */}
           {paymentSessionData?.state === "CAPTURING_PAN" && (
             <div className="flex flex-col gap-2">
-              <span className="text-[11px] font-mono text-slate-400 uppercase">
-                Or Click Quick Test Card:
+              <span className="text-[11px] font-mono text-[#768782] uppercase">
+                Quick Test Card Presets:
               </span>
               <div className="grid grid-cols-1 gap-1.5">
                 <button
                   onClick={() => onSendPan("4000 1234 5678 0987")}
-                  className="bg-slate-900 hover:bg-slate-800 border border-cyan-500/40 p-2 rounded-lg text-xs font-mono text-cyan-200 text-left flex items-center justify-between transition-all"
+                  className="bg-[#0B261B] hover:bg-[#1A2F27] border border-[#165038] p-2.5 rounded-xl text-xs font-mono text-[#EDF3F0] text-left flex items-center justify-between transition-all"
                 >
-                  <span>🗣️ Custom Card (ends in 0987)</span>
-                  <span className="text-[10px] text-cyan-400 bg-cyan-950 px-1.5 py-0.5 rounded font-bold">Spoken Target</span>
+                  <span>Custom Card (ends in 0987)</span>
+                  <span className="text-[10px] text-[#00E676] bg-[#0D1614] border border-[#165038] px-1.5 py-0.5 rounded font-bold">Spoken Target</span>
                 </button>
 
                 <button
                   onClick={() => onSendPan("4242 4242 4242 4242")}
-                  className="bg-slate-900 hover:bg-slate-800 border border-slate-700 p-2 rounded-lg text-xs font-mono text-cyan-300 text-left flex items-center justify-between transition-all"
+                  className="bg-[#0B261B] hover:bg-[#1A2F27] border border-[#1A2824] p-2.5 rounded-xl text-xs font-mono text-[#EDF3F0] text-left flex items-center justify-between transition-all"
                 >
-                  <span>🗣️ Visa Test (ends in 4242)</span>
-                  <span className="text-[10px] text-emerald-400 bg-emerald-950 px-1.5 py-0.5 rounded">Standard Test</span>
+                  <span>Visa Standard Test (ends in 4242)</span>
+                  <span className="text-[10px] text-[#34D399] bg-[#0D1614] border border-[#165038] px-1.5 py-0.5 rounded">Standard Test</span>
                 </button>
 
                 <button
                   onClick={() => onSendPan("5555 5555 5555 4444")}
-                  className="bg-slate-900 hover:bg-slate-800 border border-slate-700 p-2 rounded-lg text-xs font-mono text-cyan-300 text-left flex items-center justify-between transition-all"
+                  className="bg-[#0B261B] hover:bg-[#1A2F27] border border-[#1A2824] p-2.5 rounded-xl text-xs font-mono text-[#EDF3F0] text-left flex items-center justify-between transition-all"
                 >
-                  <span>🗣️ Mastercard (ends in 4444)</span>
-                  <span className="text-[10px] text-emerald-400 bg-emerald-950 px-1.5 py-0.5 rounded">Standard Test</span>
+                  <span>Mastercard Standard Test (ends in 4444)</span>
+                  <span className="text-[10px] text-[#34D399] bg-[#0D1614] border border-[#165038] px-1.5 py-0.5 rounded">Standard Test</span>
                 </button>
               </div>
             </div>
@@ -663,27 +663,27 @@ export default function CustomerPhone({
           {/* Expiry Input Presets */}
           {paymentSessionData?.state === "CAPTURING_EXPIRY" && (
             <div className="flex flex-col gap-2">
-              <span className="text-[11px] font-mono text-slate-400 uppercase">
+              <span className="text-[11px] font-mono text-[#768782] uppercase">
                 Quick Expiry Options:
               </span>
               <div className="grid grid-cols-3 gap-2">
                 <button
                   onClick={() => onSendExpiry("09/28")}
-                  className="bg-slate-900 hover:bg-slate-800 border border-cyan-500/40 p-2.5 rounded-lg text-xs font-mono text-cyan-200 text-center font-bold"
+                  className="bg-[#0B261B] hover:bg-[#1A2F27] border border-[#165038] p-2.5 rounded-xl text-xs font-mono text-[#00E676] text-center font-bold"
                 >
-                  🗣️ "09 / 28"
+                  09 / 28
                 </button>
                 <button
                   onClick={() => onSendExpiry("12/28")}
-                  className="bg-slate-900 hover:bg-slate-800 border border-slate-700 p-2.5 rounded-lg text-xs font-mono text-cyan-300 text-center font-bold"
+                  className="bg-[#0B261B] hover:bg-[#1A2F27] border border-[#1A2824] p-2.5 rounded-xl text-xs font-mono text-[#EDF3F0] text-center font-bold"
                 >
-                  🗣️ "12 / 28"
+                  12 / 28
                 </button>
                 <button
                   onClick={() => onSendExpiry("05/30")}
-                  className="bg-slate-900 hover:bg-slate-800 border border-slate-700 p-2.5 rounded-lg text-xs font-mono text-cyan-300 text-center font-bold"
+                  className="bg-[#0B261B] hover:bg-[#1A2F27] border border-[#1A2824] p-2.5 rounded-xl text-xs font-mono text-[#EDF3F0] text-center font-bold"
                 >
-                  🗣️ "05 / 30"
+                  05 / 30
                 </button>
               </div>
             </div>
@@ -692,21 +692,21 @@ export default function CustomerPhone({
           {/* CVV Input Presets */}
           {paymentSessionData?.state === "CAPTURING_CVV" && (
             <div className="flex flex-col gap-2">
-              <span className="text-[11px] font-mono text-slate-400 uppercase">
+              <span className="text-[11px] font-mono text-[#768782] uppercase">
                 Quick Security Code (CVV):
               </span>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => onSendCvv("123")}
-                  className="bg-slate-900 hover:bg-slate-800 border border-slate-700 p-2.5 rounded-lg text-xs font-mono text-cyan-300 text-center font-bold"
+                  className="bg-[#0B261B] hover:bg-[#1A2F27] border border-[#165038] p-2.5 rounded-xl text-xs font-mono text-[#00E676] text-center font-bold"
                 >
-                  🗣️ "1 2 3"
+                  1 2 3
                 </button>
                 <button
                   onClick={() => onSendCvv("888")}
-                  className="bg-slate-900 hover:bg-slate-800 border border-slate-700 p-2.5 rounded-lg text-xs font-mono text-cyan-300 text-center font-bold"
+                  className="bg-[#0B261B] hover:bg-[#1A2F27] border border-[#1A2824] p-2.5 rounded-xl text-xs font-mono text-[#EDF3F0] text-center font-bold"
                 >
-                  🗣️ "8 8 8"
+                  8 8 8
                 </button>
               </div>
             </div>
@@ -715,10 +715,10 @@ export default function CustomerPhone({
           {/* Confirmation Step - Reads back ONLY last 4 digits */}
           {paymentSessionData?.state === "CONFIRMING" && (
             <div className="flex flex-col gap-3">
-              <div className="bg-amber-950/30 border border-amber-500/40 p-3 rounded-lg text-xs text-amber-200">
-                🔒 Zero-Trust Confirmation: The AI speaks and shows <strong>ONLY</strong> the last 4 digits ({paymentSessionData?.last4 || "----"}) and expiry ({paymentSessionData?.expiry || "--/--"}).
-                <span className="block mt-1 text-emerald-300 font-semibold">
-                  🎙️ Speak "Yes" into your microphone or click the button below to complete.
+              <div className="bg-[#1C1A14] border border-amber-500/40 p-3 rounded-xl text-xs text-amber-200">
+                Zero-Trust Confirmation: The AI speaks and shows <strong>ONLY</strong> the last 4 digits ({paymentSessionData?.last4 || "----"}) and expiry ({paymentSessionData?.expiry || "--/--"}).
+                <span className="block mt-1 text-[#00E676] font-semibold">
+                  Voice command: Speak "Yes" into your microphone or click the button below to complete.
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -727,14 +727,14 @@ export default function CustomerPhone({
                     soundFx.playTokenSuccessChime();
                     onConfirmPayment(true);
                   }}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold p-2.5 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-all shadow-lg shadow-emerald-950/50"
+                  className="bg-[#00E676] hover:bg-[#00C853] text-[#070B0A] font-bold p-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all "
                 >
                   <Check className="w-4 h-4" />
                   <span>"Yes, Confirm"</span>
                 </button>
                 <button
                   onClick={() => onConfirmPayment(false)}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium p-2.5 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-all"
+                  className="bg-[#0B261B] hover:bg-[#1A2824] text-[#768782] hover:text-[#EDF3F0] font-medium p-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all border border-[#1A2824]"
                 >
                   <RotateCcw className="w-4 h-4" />
                   <span>"No, Restart"</span>
@@ -745,12 +745,12 @@ export default function CustomerPhone({
 
           {/* Completion Success HUD */}
           {paymentCompleted && (
-            <div className="bg-emerald-950/30 border border-emerald-500/40 p-4 rounded-xl flex flex-col items-center justify-center text-center gap-2">
-              <ShieldCheck className="w-8 h-8 text-emerald-400" />
-              <div className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
+            <div className="bg-[#0B261B] border border-[#165038] p-4 rounded-xl flex flex-col items-center justify-center text-center gap-2">
+              <ShieldCheck className="w-8 h-8 text-[#00E676]" />
+              <div className="text-xs font-bold text-[#00E676] uppercase tracking-wider">
                 Payment Authorized & Tokenized
               </div>
-              <p className="text-[11px] text-emerald-400/80">
+              <p className="text-[11px] text-[#768782]">
                 Your card has been safely tokenized. Returning to your agent now.
               </p>
             </div>
