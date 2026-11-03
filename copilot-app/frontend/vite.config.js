@@ -10,7 +10,12 @@ const wsPaymentTarget = paymentTarget.replace(/^http/, 'ws');
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: '0.0.0.0',
     port: 3000,
+    watch: {
+      usePolling: true,
+      interval: 300,
+    },
     proxy: {
       '/api/payment': {
         target: paymentTarget,
@@ -18,7 +23,10 @@ export default defineConfig({
       },
       '/ws/payment': {
         target: wsPaymentTarget,
-        ws: true
+        ws: true,
+        configure: (proxy) => {
+          proxy.on('error', () => {});
+        }
       },
       '/api': {
         target: backendTarget,
@@ -26,7 +34,10 @@ export default defineConfig({
       },
       '/ws': {
         target: wsBackendTarget,
-        ws: true
+        ws: true,
+        configure: (proxy) => {
+          proxy.on('error', () => {});
+        }
       }
     }
   }

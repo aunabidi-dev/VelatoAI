@@ -120,6 +120,7 @@ services:
       - ./copilot-app/frontend/public:/app/public
       - ./copilot-app/frontend/index.html:/app/index.html
       - ./copilot-app/frontend/tailwind.config.js:/app/tailwind.config.js
+      - ./copilot-app/frontend/vite.config.js:/app/vite.config.js
     depends_on:
       - copilot-backend
       - payment-service

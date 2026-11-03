@@ -14,6 +14,8 @@ Design rules (§6 & §14 of Product Spec):
 """
 import os
 import re
+import json
+import urllib.request
 import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
@@ -54,7 +56,7 @@ class CopilotProvider(ABC):
 
 class SparkOpenLocalProvider(CopilotProvider):
     """
-    Default Copilot Brain: Muse Spark Open (Baseten Grounded Engine).
+    Default Copilot Brain: Local Muse Spark Open Grounded Engine.
     Executes in-memory knowledge retrieval against company documents with zero outside API calls.
     Grounds live conversation scripts using PostgreSQL full-text search tokens.
     """
@@ -135,6 +137,121 @@ class SparkOpenLocalProvider(CopilotProvider):
 LocalProvider = SparkOpenLocalProvider
 
 
+class BasetenMuseSparkProvider(SparkOpenLocalProvider):
+    """
+    Live Copilot Brain powered by Meta's Muse Spark Open on Baseten.
+    Inference API: https://inference.baseten.co/v1/chat/completions
+    Model: meta-models/muse-spark-open-1026
+    Reasoning: low (configured for low-latency real-time suggestions)
+    Notice: Built with Muse Spark Open
+    """
+
+    name = "Muse Spark Open (Baseten)"
+    BUILT_WITH_NOTICE = "Built with Muse Spark Open"
+
+    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
+        super().__init__()
+        self.api_key = (
+            api_key
+            or os.getenv("BASETEN_API_KEY", "")
+        ).strip()
+        self.base_url = (
+            base_url
+            or os.getenv("BASETEN_SPARK_OPEN_URL")
+            or "https://inference.baseten.co/v1"
+        ).rstrip("/")
+        self.model = "meta-models/muse-spark-open-1026"
+
+    def get_suggestion(
+        self,
+        transcript: str,
+        retrieved_doc: Optional[Dict[str, Any]] = None,
+        safe_mode_active: bool = False,
+    ) -> Dict[str, Any]:
+        if safe_mode_active:
+            return self._blackout()
+
+        # Immediate deterministic check for payment intent (zero latency)
+        transcript_lower = transcript.lower()
+        if re.search(r"\b(pay|payment|paying|card|credit card|charge|invoice)\b", transcript_lower):
+            return {
+                "suggestion": "Payment Intent Detected: Inform customer they are being passed to our secure automated payment line, wait for the tone, then click [PCI SAFE MODE].",
+                "confidence": 0.98,
+                "source_doc_title": retrieved_doc.get("title") if retrieved_doc else "Payment Security Protocol",
+                "model": self.name,
+                "redacted": False,
+                "built_with": self.BUILT_WITH_NOTICE,
+            }
+
+        # Context construction with grounding docs
+        doc_context = ""
+        source_doc_title = None
+        if retrieved_doc:
+            source_doc_title = retrieved_doc.get("title")
+            doc_content = retrieved_doc.get("content", "")[:500]
+            doc_context = f"\nRelevant Company Knowledge Document:\nTitle: {source_doc_title}\nContent: {doc_content}\n"
+
+        system_prompt = (
+            "You are ZytaSafe Live Support Copilot, an enterprise AI assistant for contact center agents. "
+            "Based on the customer utterance and any retrieved company policy documents provided below, "
+            "formulate a concise, professional, actionable recommendation or exact response script for the human agent. "
+            "Keep your response strictly under 2 sentences."
+        )
+
+        user_content = f"Customer said: '{transcript}'\n{doc_context}\nSuggest the best response or action for the agent:"
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content}
+            ],
+            "reasoning_effort": "low",
+            "max_tokens": 600,
+            "temperature": 0.1,
+        }
+
+        try:
+            req = urllib.request.Request(
+                f"{self.base_url}/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                }
+            )
+            with urllib.request.urlopen(req, timeout=4.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                choice = data.get("choices", [{}])[0]
+                msg = choice.get("message", {})
+                content = msg.get("content") or ""
+
+                # Clean up any tags or prefixes
+                clean_text = re.sub(r"<\|.*?\|>", "", content).strip()
+                for prefix in ["suggested response:", "suggested action:", "assistant to", "assistant:"]:
+                    if clean_text.lower().startswith(prefix):
+                        clean_text = clean_text[len(prefix):].strip()
+
+                if clean_text:
+                    if re.search(r"\b(refund|refunds|return)\b", transcript_lower) and "refund" not in clean_text.lower():
+                        clean_text = f"Refund Guidelines: {clean_text}"
+                    return {
+                        "suggestion": clean_text,
+                        "confidence": 0.94,
+                        "source_doc_title": source_doc_title,
+                        "model": self.name,
+                        "redacted": False,
+                        "built_with": self.BUILT_WITH_NOTICE,
+                    }
+        except Exception as e:
+            logger.warning(f"[BasetenMuseSparkProvider] API call fallback: {e}")
+
+        # Fallback to local grounded rule engine
+        fallback_res = super().get_suggestion(transcript, retrieved_doc, safe_mode_active)
+        fallback_res["model"] = f"{self.name} (Grounded)"
+        return fallback_res
+
+
 class MetaModelApiAdapter(CopilotProvider):
     """
     Adapter for outside providers (such as Meta Model API).
@@ -186,7 +303,8 @@ def get_provider() -> CopilotProvider:
     """
     Factory:
     - If API_ACTIVE is true or COPILOT_PROVIDER is 'external', activates MetaModelApiAdapter.
-    - Otherwise returns Muse Spark Open on Baseten (default, offline & grounded).
+    - If COPILOT_PROVIDER is 'local_grounded', returns SparkOpenLocalProvider.
+    - Otherwise returns BasetenMuseSparkProvider (subclass of LocalProvider) with fallback.
     """
     api_active = is_api_active()
     provider_env = os.getenv("COPILOT_PROVIDER", "spark_open").strip().lower()
@@ -195,8 +313,12 @@ def get_provider() -> CopilotProvider:
         logger.info("[CopilotProvider] Outside provider adapter enabled (API_ACTIVE=true)")
         return MetaModelApiAdapter()
 
-    logger.info("[CopilotProvider] Using Muse Spark Open on Baseten (default)")
-    return SparkOpenLocalProvider()
+    if provider_env in ("local", "local_grounded"):
+        logger.info("[CopilotProvider] Using Local Muse Spark Open Grounded Engine")
+        return SparkOpenLocalProvider()
+
+    logger.info("[CopilotProvider] Using Muse Spark Open on Baseten")
+    return BasetenMuseSparkProvider()
 
 
 # Module-level singleton

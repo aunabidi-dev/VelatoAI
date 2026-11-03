@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ShieldCheck, Search, Database, Terminal, AlertCircle, FileCheck, CheckCircle2,
   Lock, RefreshCw, Download, Zap, Cpu, Activity, Play, CheckCircle, ChevronDown,
@@ -19,7 +19,10 @@ export default function ProofPanel({
   onSendExpiry,
   onSendCvv,
   onConfirmPayment,
+  recordedAudioUrl = null,
+  recordedDuration = 0,
 }) {
+  const [displayLimit, setDisplayLimit] = useState(50);
   const [isScanning, setIsScanning] = useState(false);
   const [activeFilter, setActiveFilter] = useState('ALL');
   const [chainVerification, setChainVerification] = useState(null);
@@ -146,14 +149,17 @@ export default function ProofPanel({
     }
   };
 
-  // Filter audit events
-  const filteredEvents = (auditEvents || []).filter(evt => {
-    if (activeFilter === 'ALL') return true;
-    if (activeFilter === 'SAFE_MODE') return evt.event_type?.includes('SAFE_MODE');
-    if (activeFilter === 'TOKENS') return !!evt.token_ref;
-    if (activeFilter === 'REDACTION') return evt.event_type?.includes('REDACTION') || evt.details?.includes('redact');
-    return true;
-  });
+  // Filter audit events with memoization and slice limit to avoid browser lag
+  const filteredEvents = useMemo(() => {
+    const events = (auditEvents || []).filter(evt => {
+      if (activeFilter === 'ALL') return true;
+      if (activeFilter === 'SAFE_MODE') return evt.event_type?.includes('SAFE_MODE');
+      if (activeFilter === 'TOKENS') return !!evt.token_ref;
+      if (activeFilter === 'REDACTION') return evt.event_type?.includes('REDACTION') || evt.details?.includes('redact');
+      return true;
+    });
+    return events.slice(-displayLimit);
+  }, [auditEvents, activeFilter, displayLimit]);
 
   // Dynamic values for "What Human Agent Sees"
   const isSafeMode = callState?.safe_mode_active || callState?.agent_isolated;
@@ -395,6 +401,8 @@ export default function ProofPanel({
         callId={callState?.call_id || "call_meta_hackathon_01"}
         agentRole={agentRole}
         tokenRef={paymentResult?.token || callState?.token_ref}
+        recordedAudioUrl={recordedAudioUrl}
+        recordedDuration={recordedDuration}
       />
 
       {/* Cryptographically Verifiable Append-Only Audit Trail Table */}

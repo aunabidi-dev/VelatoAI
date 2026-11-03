@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Upload, FileText, Trash2, Plus, BookOpen, Shield, CheckCircle2,
-  AlertCircle, RefreshCw, ChevronDown, ChevronUp, X
+  AlertCircle, RefreshCw, ChevronDown, ChevronUp, X, Lock, Eye
 } from 'lucide-react';
 
 /**
- * AdminPanel — Phase 3
- * Admin-only view for managing the copilot knowledge base.
- * Admins can upload, view, and delete company policy documents.
- * These documents are retrieved during live calls to ground copilot suggestions.
+ * AdminPanel
+ * Role-Based Knowledge Base management for copilot grounding.
+ * Admin: Full upload, view, and delete privileges.
+ * Agent: Strictly read-only access to browse and view documents.
  */
 export default function AdminPanel({ agentRole = 'admin', onBack }) {
   const [documents, setDocuments] = useState([]);
@@ -46,6 +46,10 @@ export default function AdminPanel({ agentRole = 'admin', onBack }) {
 
   const handleUpload = async (e) => {
     e.preventDefault();
+    if (agentRole !== 'admin') {
+      showNotification('error', 'Unauthorized: Only Administrators can upload documents.');
+      return;
+    }
     if (!uploadTitle.trim() || !uploadContent.trim()) {
       showNotification('error', 'Both title and content are required.');
       return;
@@ -77,6 +81,10 @@ export default function AdminPanel({ agentRole = 'admin', onBack }) {
   };
 
   const handleDelete = async (docId, title) => {
+    if (agentRole !== 'admin') {
+      showNotification('error', 'Unauthorized: Only Administrators can delete documents.');
+      return;
+    }
     if (!window.confirm(`Delete document "${title}"? This cannot be undone.`)) return;
     setDeletingId(docId);
     try {
@@ -110,21 +118,25 @@ export default function AdminPanel({ agentRole = 'admin', onBack }) {
   return (
     <div className="w-full max-w-4xl mx-auto flex flex-col gap-6">
       {/* Header */}
-      <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-5 border-[#1A2824] flex items-center justify-between">
+      <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-[#0B261B] border border-[#165038]">
+          <div className="p-2.5 rounded-xl bg-[#0B261B] border border-[#165038]">
             <BookOpen className="w-5 h-5 text-[#00E676]" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-[#EDF3F0]">Knowledge Base Admin</h2>
+            <h2 className="text-base font-bold text-[#EDF3F0]">Knowledge Base & Copilot Grounding</h2>
             <p className="text-xs text-[#768782] mt-0.5">
-              Upload policy documents and scripts that ground live copilot suggestions.
+              Enterprise policies and scripts retrieved during live customer calls by Muse Spark Open.
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className={`text-[11px] font-mono px-2.5 py-1 rounded-full border ${agentRole === 'admin' ? 'bg-rose-950 text-rose-300 border-rose-800' : 'bg-slate-800 text-[#768782] border-[#22322F]'}`}>
-            {agentRole === 'admin' ? '🔐 Admin Role' : '👁 Agent Role (Read-Only)'}
+          <span className={`text-[11px] font-mono px-3 py-1 rounded-full border ${
+            agentRole === 'admin'
+              ? 'bg-[#0B2A1E] text-[#00E676] border-[#165038]'
+              : 'bg-[#131E1B] text-[#768782] border-[#1A2824]'
+          }`}>
+            {agentRole === 'admin' ? '🛡️ Admin (Full Access)' : '👤 Agent (Read-Only)'}
           </span>
           <button
             onClick={fetchDocuments}
@@ -138,9 +150,9 @@ export default function AdminPanel({ agentRole = 'admin', onBack }) {
 
       {/* Notification */}
       {notification && (
-        <div className={`bg-[#0E1614] border border-[#1A2824] rounded-2xl px-4 py-3 flex items-center gap-3 text-sm border ${
+        <div className={`rounded-xl px-4 py-3 flex items-center gap-3 text-xs border ${
           notification.type === 'success'
-            ? 'border-emerald-500/40 bg-emerald-950/20 text-emerald-300'
+            ? 'border-[#165038] bg-[#0B261B] text-[#00E676]'
             : 'border-rose-500/40 bg-rose-950/20 text-rose-300'
         }`}>
           {notification.type === 'success'
@@ -153,132 +165,166 @@ export default function AdminPanel({ agentRole = 'admin', onBack }) {
         </div>
       )}
 
-      {/* Upload Form */}
-      <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-6 border-[#1A2824] flex flex-col gap-4">
-        <div className="flex items-center gap-2 border-b border-[#1A2824] pb-3">
-          <Plus className="w-4 h-4 text-[#00E676]" />
-          <h3 className="text-sm font-bold text-[#EDF3F0] uppercase tracking-wider">Upload New Document</h3>
-        </div>
-        <form onSubmit={handleUpload} className="flex flex-col gap-3">
-          <div>
-            <label className="text-xs text-[#768782] uppercase tracking-wider font-mono mb-1.5 block">
-              Document Title *
-            </label>
-            <input
-              type="text"
-              value={uploadTitle}
-              onChange={e => setUploadTitle(e.target.value)}
-              placeholder="e.g. Refund Policy v3.2, Technical Escalation Guide"
-              className="w-full bg-[#070B0A] border border-[#22322F] rounded-lg px-3 py-2.5 text-sm text-[#EDF3F0] placeholder-slate-500 focus:outline-none focus:border-[#00E676] transition-colors"
-              maxLength={200}
-            />
+      {/* Upload Form (Admin only) or Read-Only Notice (Agent) */}
+      {agentRole === 'admin' ? (
+        <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-6 flex flex-col gap-4">
+          <div className="flex items-center gap-2 border-b border-[#1A2824] pb-3">
+            <Plus className="w-4 h-4 text-[#00E676]" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[#EDF3F0]">Upload New Grounding Document</h3>
           </div>
-          <div>
-            <label className="text-xs text-[#768782] uppercase tracking-wider font-mono mb-1.5 block">
-              Document Content *
-            </label>
-            <textarea
-              value={uploadContent}
-              onChange={e => setUploadContent(e.target.value)}
-              placeholder="Paste the full policy text, script, or knowledge article here..."
-              rows={6}
-              className="w-full bg-[#070B0A] border border-[#22322F] rounded-lg px-3 py-2.5 text-sm text-[#EDF3F0] placeholder-slate-500 focus:outline-none focus:border-[#00E676] transition-colors resize-none font-mono"
-            />
-            <div className="text-[10px] text-[#768782] mt-1 text-right font-mono">
-              {uploadContent.length} characters
+          <form onSubmit={handleUpload} className="flex flex-col gap-3">
+            <div>
+              <label className="text-[11px] text-[#768782] uppercase tracking-wider font-mono mb-1.5 block">
+                Document Title *
+              </label>
+              <input
+                type="text"
+                value={uploadTitle}
+                onChange={e => setUploadTitle(e.target.value)}
+                placeholder="e.g. Refund Policy v3.2, Billing Escalation Guide"
+                className="w-full bg-[#070B0A] border border-[#1A2824] rounded-xl px-3 py-2.5 text-xs text-[#EDF3F0] placeholder:text-[#4B5A55] focus:outline-none focus:border-[#00E676] transition-colors"
+                maxLength={200}
+              />
+            </div>
+            <div>
+              <label className="text-[11px] text-[#768782] uppercase tracking-wider font-mono mb-1.5 block">
+                Document Content *
+              </label>
+              <textarea
+                value={uploadContent}
+                onChange={e => setUploadContent(e.target.value)}
+                placeholder="Paste the policy text, pricing tables, or customer objection script that Muse Spark Open should retrieve..."
+                rows={5}
+                className="w-full bg-[#070B0A] border border-[#1A2824] rounded-xl px-3 py-2.5 text-xs text-[#EDF3F0] placeholder:text-[#4B5A55] focus:outline-none focus:border-[#00E676] transition-colors resize-y font-mono"
+              />
+            </div>
+            <div className="flex justify-end mt-1">
+              <button
+                type="submit"
+                disabled={uploading || !uploadTitle.trim() || !uploadContent.trim()}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#00E676] hover:bg-[#00C853] disabled:opacity-40 text-[#070B0A] font-bold text-xs transition-all shadow-sm"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>{uploading ? 'Indexing into Vector Store...' : 'Upload & Ground'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : (
+        <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-[#111C19] border border-[#1C2C28] text-[#768782]">
+              <Lock className="w-5 h-5 text-[#34D399]" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[#EDF3F0]">Read-Only Knowledge Base</h3>
+              <p className="text-xs text-[#768782] mt-0.5">
+                Agents have view-only access to company policies and scripts. Document uploads and edits require Admin privileges.
+              </p>
             </div>
           </div>
-          <button
-            type="submit"
-            disabled={uploading || !uploadTitle.trim() || !uploadContent.trim()}
-            className="self-start bg-[#00E676] hover:bg-[#00C853] disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-bold px-5 py-2 rounded-lg text-xs flex items-center gap-2 transition-all"
-          >
-            <Upload className="w-4 h-4" />
-            {uploading ? 'Uploading...' : 'Upload Document'}
-          </button>
-        </form>
-      </div>
+          <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-[#111C19] text-[#768782] border border-[#1A2824]">
+            RBAC: Protected
+          </span>
+        </div>
+      )}
 
-      {/* Document Library */}
-      <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-5 border-[#1A2824] flex flex-col gap-3">
+      {/* Documents List */}
+      <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-6 flex flex-col gap-4">
         <div className="flex items-center justify-between border-b border-[#1A2824] pb-3">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-[#00E676]" />
-            <h3 className="text-sm font-bold text-[#EDF3F0] uppercase tracking-wider">
-              Knowledge Library
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[#EDF3F0]">
+              Active Knowledge Documents ({documents.length})
             </h3>
           </div>
           <span className="text-[11px] font-mono text-[#768782]">
-            {documents.length} document{documents.length !== 1 ? 's' : ''}
+            Grounded in Baseten Muse Spark Open
           </span>
         </div>
 
         {isLoading ? (
-          <div className="py-8 text-center text-[#768782] text-sm">Loading documents...</div>
+          <div className="py-12 flex flex-col items-center justify-center gap-2 text-[#768782]">
+            <RefreshCw className="w-5 h-5 animate-spin text-[#00E676]" />
+            <span className="text-xs font-mono">Loading knowledge base...</span>
+          </div>
         ) : documents.length === 0 ? (
-          <div className="py-8 text-center text-[#768782] text-sm">
-            No documents uploaded yet. Upload your first policy document above.
+          <div className="py-12 flex flex-col items-center justify-center gap-2 text-[#768782] text-center">
+            <FileText className="w-8 h-8 text-[#1A2824]" />
+            <p className="text-xs">No documents uploaded yet.</p>
+            {agentRole === 'admin' && (
+              <p className="text-[11px] text-[#4B5A55]">Use the upload form above to index your first policy.</p>
+            )}
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {documents.map((doc) => (
-              <div
-                key={doc.doc_id}
-                className="bg-[#070B0A]/60 border border-[#1A2824] rounded-xl overflow-hidden"
-              >
-                {/* Doc header */}
-                <div className="flex items-center justify-between px-4 py-3">
-                  <button
-                    onClick={() => setExpandedDoc(expandedDoc === doc.doc_id ? null : doc.doc_id)}
-                    className="flex items-center gap-3 text-left flex-1 min-w-0"
-                  >
-                    <FileText className="w-4 h-4 text-[#00E676] shrink-0" />
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-[#EDF3F0] truncate">{doc.title}</div>
-                      <div className="text-[11px] text-[#768782] font-mono mt-0.5">
-                        {doc.word_count} words · Uploaded {formatDate(doc.created_at)} · by {doc.uploaded_by}
+          <div className="flex flex-col gap-2.5">
+            {documents.map(doc => {
+              const isExpanded = expandedDoc === doc.id;
+              return (
+                <div
+                  key={doc.id}
+                  className="rounded-xl border border-[#1A2824] bg-[#070B0A] overflow-hidden transition-all hover:border-[#1E302B]"
+                >
+                  <div className="p-3.5 flex items-center justify-between gap-3">
+                    <div
+                      className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                      onClick={() => setExpandedDoc(isExpanded ? null : doc.id)}
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-[#0B261B] border border-[#165038] flex items-center justify-center text-[#00E676] shrink-0">
+                        <FileText className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold text-[#EDF3F0] truncate flex items-center gap-2">
+                          <span>{doc.title}</span>
+                          <span className="text-[10px] font-mono text-[#34D399] bg-[#0B2A1E] border border-[#165038] px-1.5 py-0.2 rounded">
+                            {doc.chunk_count || 1} chunks
+                          </span>
+                        </div>
+                        <div className="text-[10px] font-mono text-[#768782] mt-0.5">
+                          ID: {doc.id} • Added: {formatDate(doc.created_at)}
+                        </div>
                       </div>
                     </div>
-                    {expandedDoc === doc.doc_id
-                      ? <ChevronUp className="w-4 h-4 text-[#768782] shrink-0 ml-2" />
-                      : <ChevronDown className="w-4 h-4 text-[#768782] shrink-0 ml-2" />
-                    }
-                  </button>
-                  <button
-                    onClick={() => handleDelete(doc.doc_id, doc.title)}
-                    disabled={deletingId === doc.doc_id || doc.uploaded_by === 'system'}
-                    title={doc.uploaded_by === 'system' ? 'System default docs can be deleted too' : 'Delete document'}
-                    className="ml-3 p-1.5 text-[#768782] hover:text-rose-400 disabled:opacity-30 transition-colors rounded-md hover:bg-rose-950/30 shrink-0"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
 
-                {/* Expanded content */}
-                {expandedDoc === doc.doc_id && (
-                  <div className="px-4 pb-4 border-t border-[#1A2824]/60 pt-3">
-                    <div className="bg-slate-950 rounded-lg p-3 text-xs text-[#C0D0CB] font-mono leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto">
-                      {doc.content}
-                    </div>
-                    <div className="text-[10px] text-[#768782] font-mono mt-2">
-                      ID: {doc.doc_id}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => setExpandedDoc(isExpanded ? null : doc.id)}
+                        className="p-1.5 text-[#768782] hover:text-[#EDF3F0] rounded-lg transition-colors"
+                        title={isExpanded ? 'Collapse' : 'Expand Content'}
+                      >
+                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
+
+                      {agentRole === 'admin' && (
+                        <button
+                          onClick={() => handleDelete(doc.id, doc.title)}
+                          disabled={deletingId === doc.id}
+                          className="p-1.5 text-[#768782] hover:text-rose-400 rounded-lg transition-colors disabled:opacity-40"
+                          title="Delete document"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
-                )}
-              </div>
-            ))}
+
+                  {isExpanded && (
+                    <div className="px-4 pb-4 pt-1 border-t border-[#1A2824] bg-[#0A110F]">
+                      <div className="text-[11px] font-mono text-[#768782] uppercase mb-1.5 flex items-center gap-1.5">
+                        <Eye className="w-3.5 h-3.5 text-[#00E676]" />
+                        <span>Document Raw Content:</span>
+                      </div>
+                      <pre className="text-xs font-mono text-[#C0D0CB] bg-[#070B0A] p-3 rounded-lg border border-[#1A2824] whitespace-pre-wrap max-h-60 overflow-y-auto leading-relaxed">
+                        {doc.content}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
-      </div>
-
-      {/* Security Notice */}
-      <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-4 border-[#1A2824] flex items-start gap-3">
-        <Shield className="w-4 h-4 text-[#00E676] shrink-0 mt-0.5" />
-        <div className="text-[11px] text-[#768782] leading-relaxed">
-          <strong className="text-[#C0D0CB]">Zero-Trust Document Policy:</strong> Documents are stored only in the Control Plane and are never accessible from the PCI Data Plane (payment service). The copilot only receives redacted transcripts — any Luhn-valid card number in a transcript is masked before retrieval occurs. Agents can view suggestions but cannot manage documents.
-        </div>
       </div>
     </div>
   );
 }
-
