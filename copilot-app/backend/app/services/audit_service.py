@@ -90,6 +90,17 @@ class AuditService:
             if pan_match:
                 raise ValueError("Security Violation: Attempted to log potential card digits in audit trail!")
 
+        # Deduplication protection: Ignore duplicate identical status events within 1.5 seconds
+        if self._events:
+            last_ev = self._events[-1]
+            if (
+                last_ev.get("call_id") == call_id
+                and last_ev.get("event_type") == event_type
+                and last_ev.get("token_ref") == token_ref
+                and (time.time() - last_ev.get("timestamp", 0)) < 1.5
+            ):
+                return last_ev
+
         ts = time.time()
         event_id = f"aud_{uuid.uuid4().hex[:10]}"
         # Phase 4: Cryptographic SHA-256 Hash Chaining
@@ -113,7 +124,16 @@ class AuditService:
         }
         self._prev_hash = event_hash
         self._events.append(event)
+        if len(self._events) > 1000:
+            self._events = self._events[-1000:]
         return event
+
+    def reset_audit_trail(self) -> None:
+        self._events.clear()
+        self._transcript_chunks.clear()
+        self._recording_metadata.clear()
+        self._genesis_hash = "0" * 64
+        self._prev_hash = self._genesis_hash
 
     def record_transcript_chunk(self, call_id: str, chunk: str, speaker: str = "customer") -> None:
         """Phase 2: Stores a transcript chunk for leak scanning."""
@@ -132,11 +152,15 @@ class AuditService:
             "timestamp": time.time(),
         })
 
-    def get_events(self, call_id: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Retrieve audit log, optionally filtered by call_id."""
+    def get_events(self, call_id: Optional[str] = None, limit: Optional[int] = 100) -> List[Dict[str, Any]]:
+        """Retrieve audit log, optionally filtered by call_id and capped by limit."""
         if call_id:
-            return [e for e in self._events if e["call_id"] == call_id]
-        return list(self._events)
+            res = [e for e in self._events if e["call_id"] == call_id]
+        else:
+            res = list(self._events)
+        if limit and limit > 0:
+            return res[-limit:]
+        return res
 
     def scan_for_card_leaks(self) -> Dict[str, Any]:
         """

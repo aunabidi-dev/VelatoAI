@@ -15,7 +15,7 @@ export default {
           700: '#1A2824',
           600: '#223831',
         },
-        zytagreen: {
+        velatogreen: {
           DEFAULT: '#00E676',
           emerald: '#00E676',
           mint: '#34D399',

@@ -18,7 +18,7 @@ import logging
 
 from .core.state_machine import PaymentSession, PaymentState
 from .core.token_vault import vault
-from .core.meta_speech_stt import meta_speech_engine, whisper_engine
+from .core.meta_speech_stt import meta_speech_engine
 from .core.log_redaction import install_log_redaction
 
 # Phase 2: Install PCI log redaction filter on ALL loggers at startup
@@ -32,7 +32,7 @@ logger = logging.getLogger("payment-service")
 
 app = FastAPI(
     title="Zero-Trust PCI Payment Microservice",
-    description="PCI Safe Mode Voice Intercept & Tokenization Service (Phase 2 Hardened)",
+    description="VelatoAI Autonomous Voice Payment Handover & Tokenization Service (Phase 2 Hardened)",
     version="2.0.0"
 )
 

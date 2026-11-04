@@ -12,20 +12,20 @@ services:
   # 1. PostgreSQL Database with Full-Text Search (Business records, tokens, audit logs, knowledge base)
   postgres:
     image: ankane/pgvector:v0.5.1
-    container_name: zytasafe-postgres
+    container_name: velatoai-postgres
     ports:
       - "5433:5432"
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-zytasafe}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zytasafe_secure_pass}
-      POSTGRES_DB: ${POSTGRES_DB:-zytasafe_db}
+      POSTGRES_USER: ${POSTGRES_USER:-velatoai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-velatoai_secure_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-velatoai_db}
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
       - control-plane-net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-zytasafe} -d $${POSTGRES_DB:-zytasafe_db}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-velatoai} -d $${POSTGRES_DB:-velatoai_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -33,7 +33,7 @@ services:
   # 2. LiveKit Media Server (WebRTC Voice Routing & Severance)
   livekit:
     image: livekit/livekit-server:v1.6.0
-    container_name: zytasafe-livekit
+    container_name: velatoai-livekit
     command: ["--dev", "--bind", "0.0.0.0", "--keys", "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-secret}"]
     ports:
       - "7880:7880"       # Signaling & HTTP
@@ -49,7 +49,7 @@ services:
     build:
       context: ./payment-service
       dockerfile: Dockerfile
-    container_name: zytasafe-payment-service
+    container_name: velatoai-payment-service
     ports:
       - "8001:8001"
     environment:
@@ -77,12 +77,12 @@ services:
     build:
       context: ./copilot-app/backend
       dockerfile: Dockerfile
-    container_name: zytasafe-copilot-backend
+    container_name: velatoai-copilot-backend
     ports:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-zytasafe}:${POSTGRES_PASSWORD:-zytasafe_secure_pass}@postgres:5432/${POSTGRES_DB:-zytasafe_db}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-velatoai}:${POSTGRES_PASSWORD:-velatoai_secure_pass}@postgres:5432/${POSTGRES_DB:-velatoai_db}
       - PAYMENT_SERVICE_URL=http://payment-service:8001
       - LIVEKIT_URL=${LIVEKIT_URL:-http://livekit:7880}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
@@ -109,7 +109,7 @@ services:
     build:
       context: ./copilot-app/frontend
       dockerfile: Dockerfile
-    container_name: zytasafe-copilot-frontend
+    container_name: velatoai-copilot-frontend
     ports:
       - "3000:3000"
     environment:
@@ -120,6 +120,7 @@ services:
       - ./copilot-app/frontend/public:/app/public
       - ./copilot-app/frontend/index.html:/app/index.html
       - ./copilot-app/frontend/tailwind.config.js:/app/tailwind.config.js
+      - ./copilot-app/frontend/vite.config.js:/app/vite.config.js
     depends_on:
       - copilot-backend
       - payment-service

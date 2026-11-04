@@ -20,20 +20,28 @@ PAYMENT_SERVICE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://localhost:8001")
 
 
 class CallSession:
-    def __init__(self, call_id: str, customer_name: str = "Jane Doe", agent_id: str = "agent_01"):
+    def __init__(
+        self,
+        call_id: str,
+        customer_name: str = "Jane Doe",
+        agent_id: str = "agent_01",
+        is_active: bool = True,
+        status: str = "CONNECTED"
+    ):
         self.call_id = call_id
         self.customer_name = customer_name
         self.agent_id = agent_id
 
         # Audio routing states
-        self.is_active = True
+        self.is_active = is_active
+        self.status = status
         self.safe_mode_active = False
         self.agent_isolated = False
-        self.recording_active = True
+        self.recording_active = is_active
         self.recording_paused_pci = False
         self.copilot_blackout = False
 
-        # Phase 2: Supervisor join lock — blocks new subscriptions during Safe Mode
+        # Phase 2: Supervisor join lock — blocks new participants during Safe Mode
         self.safe_mode_locked = False
 
         # Safe Mode tracking
@@ -52,22 +60,160 @@ class CallManager:
     def __init__(self):
         self.calls: Dict[str, CallSession] = {}
 
-    def create_call(self, call_id: str, customer_name: str = "Jane Doe", agent_id: str = "agent_01") -> CallSession:
-        call = CallSession(call_id=call_id, customer_name=customer_name, agent_id=agent_id)
-        self.calls[call_id] = call
-
-        # Phase 2: Start server-side recording
-        recording_service.start_recording(call_id)
-
-        audit_service.record_event(
+    def create_call(
+        self,
+        call_id: str,
+        customer_name: str = "Jane Doe",
+        agent_id: str = "agent_01",
+        is_active: bool = True,
+        status: str = "CONNECTED"
+    ) -> CallSession:
+        call = CallSession(
             call_id=call_id,
-            event_type="CALL_CONNECTED",
-            details=f"Agent {agent_id} connected with customer {customer_name}"
+            customer_name=customer_name,
+            agent_id=agent_id,
+            is_active=is_active,
+            status=status
         )
+        self.calls[call_id] = call
+        if is_active:
+            recording_service.start_recording(call_id)
+            audit_service.record_event(
+                call_id=call_id,
+                event_type="CALL_CONNECTED",
+                details=f"Agent {agent_id} connected with customer {customer_name}"
+            )
         return call
 
     def get_call(self, call_id: str) -> Optional[CallSession]:
         return self.calls.get(call_id)
+
+    async def initiate_call(
+        self,
+        call_id: str,
+        customer_name: str = "Jane Doe",
+        phone: str = "+1-555-0192",
+        plan: str = "Annual Cloud AI (Tier 1)"
+    ) -> Dict[str, Any]:
+        """User/Customer initiates a live call from browser window."""
+        call = self.get_call(call_id)
+        if not call:
+            call = self.create_call(call_id=call_id, customer_name=customer_name)
+        call.status = "RINGING"
+        call.customer_name = customer_name
+
+        audit_service.record_event(
+            call_id=call_id,
+            event_type="CALL_INITIATED",
+            details=f"Customer {customer_name} initiated call ({phone}, plan: {plan}). Ringing agent desk."
+        )
+
+        call.is_active = False
+        payload = {
+            "type": "INCOMING_CALL",
+            "call_id": call_id,
+            "status": "RINGING",
+            "customer_name": customer_name,
+            "caller_name": customer_name,
+            "phone": phone,
+            "plan": plan,
+            "invoice": "INV-2026-891",
+            "amount": 49.99,
+            "timestamp": time.time(),
+        }
+        await self.broadcast_to_role(call_id, "agent", payload)
+        customer_payload = {
+            "type": "CALL_RINGING",
+            "call_id": call_id,
+            "status": "RINGING",
+            "timestamp": time.time(),
+        }
+        await self.broadcast_to_role(call_id, "customer", customer_payload)
+        return {"call_id": call_id, "status": "RINGING", "customer_name": customer_name}
+
+    async def accept_call(self, call_id: str) -> Dict[str, Any]:
+        """Agent desktop accepts the incoming call."""
+        call = self.get_call(call_id)
+        if not call:
+            call = self.create_call(call_id=call_id)
+
+        # Idempotency check: avoid re-accepting already connected calls
+        if call.status == "CONNECTED" and call.is_active:
+            return {"call_id": call_id, "status": "CONNECTED"}
+
+        call.status = "CONNECTED"
+        call.is_active = True
+        call.recording_active = True
+        recording_service.start_recording(call_id)
+
+        audit_service.record_event(
+            call_id=call_id,
+            event_type="CALL_ACCEPTED",
+            details=f"Agent accepted call {call_id}. Real-time bidirectional audio stream live."
+        )
+
+        payload = {
+            "type": "CALL_ACCEPTED",
+            "call_id": call_id,
+            "status": "CONNECTED",
+            "timestamp": time.time(),
+        }
+        await self.broadcast_call_state(call_id, payload)
+        return {"call_id": call_id, "status": "CONNECTED"}
+
+    async def decline_call(self, call_id: str) -> Dict[str, Any]:
+        """Agent desktop declines the incoming call."""
+        call = self.get_call(call_id)
+        if call:
+            # Idempotency check: prevent decline feedback loop
+            if call.status == "DECLINED":
+                return {"call_id": call_id, "status": "DECLINED"}
+
+            call.status = "DECLINED"
+            call.is_active = False
+            recording_service.stop_recording(call_id)
+
+            audit_service.record_event(
+                call_id=call_id,
+                event_type="CALL_DECLINED",
+                details=f"Agent declined incoming call {call_id}. Notifying customer."
+            )
+
+            payload = {
+                "type": "CALL_DECLINED",
+                "call_id": call_id,
+                "status": "DECLINED",
+                "timestamp": time.time(),
+            }
+            await self.broadcast_call_state(call_id, payload)
+        return {"call_id": call_id, "status": "DECLINED"}
+
+    async def hangup_call(self, call_id: str) -> Dict[str, Any]:
+        """Customer or Agent ends the call."""
+        call = self.get_call(call_id)
+        if call:
+            # Idempotency check: CRITICAL to break infinite WebSocket hangup ping-pong loops
+            if call.status == "ENDED":
+                return {"call_id": call_id, "status": "ENDED"}
+
+            call.status = "ENDED"
+            call.is_active = False
+            recording_service.stop_recording(call_id)
+
+            audit_service.record_event(
+                call_id=call_id,
+                event_type="CALL_ENDED",
+                details=f"Call {call_id} ended. Server recording finalized."
+            )
+
+            payload = {
+                "type": "CALL_ENDED",
+                "call_id": call_id,
+                "status": "ENDED",
+                "timestamp": time.time(),
+            }
+            await self.broadcast_call_state(call_id, payload)
+        return {"call_id": call_id, "status": "ENDED"}
 
     def can_join_call(self, call_id: str, role: str) -> bool:
         """
@@ -78,14 +224,12 @@ class CallManager:
         """
         call = self.get_call(call_id)
         if not call:
-            return True  # Call doesn't exist yet, allow connection to create it
+            return True
 
         if call.safe_mode_locked and role not in ("agent", "customer"):
-            return False  # Block supervisor, observer, or any new role
+            return False
 
-        # Even existing roles: block NEW agent connections during Safe Mode
         if call.safe_mode_locked and role == "agent" and len(call.connections.get("agent", set())) > 0:
-            # Already has an agent connected — block additional agent subscriptions
             return False
 
         return True
@@ -109,7 +253,7 @@ class CallManager:
         call.agent_isolated = True
         call.copilot_blackout = True
         call.recording_paused_pci = True
-        call.safe_mode_locked = True  # Phase 2: Lock out supervisors
+        call.safe_mode_locked = True
 
         timestamp = time.time()
         call.pci_timeline_markers.append({
@@ -140,8 +284,7 @@ class CallManager:
                     call.payment_session_id = data.get("session_id")
                 else:
                     data = {"error": "Payment service initiation failed"}
-        except Exception as e:
-            # Stand-in fallback if payment service is starting up
+        except Exception:
             call.payment_session_id = f"sess_fallback_{int(timestamp)}"
             data = {"session_id": call.payment_session_id, "prompt": "Secure payment initialized"}
 
@@ -189,7 +332,7 @@ class CallManager:
         call.agent_isolated = False
         call.copilot_blackout = False
         call.recording_paused_pci = False
-        call.safe_mode_locked = False  # Phase 2: Unlock supervisor join
+        call.safe_mode_locked = False
 
         call.token_ref = token
         call.last4 = last4
@@ -282,9 +425,12 @@ class CallManager:
 
     def reset_call(self, call_id: str):
         """Reset a call back to a clean initial conversation state."""
-        recording_service.start_recording(call_id)
+        recording_service.stop_recording(call_id)
         call = self.get_call(call_id)
         if call:
+            call.status = "IDLE"
+            call.is_active = False
+            call.recording_active = False
             call.safe_mode_active = False
             call.agent_isolated = False
             call.copilot_blackout = False
@@ -311,7 +457,7 @@ class CallManager:
                 event_type="TRANSCRIPT_REDACTION",
                 details=f"Redacted {count} potential PAN sequence(s) from copilot transcript"
             )
-        return cleaned
+        return cleaned or ""
 
     async def broadcast_call_state(self, call_id: str, payload: Dict[str, Any]):
         """Broadcast state updates to all active websockets in this call room."""
@@ -328,8 +474,6 @@ class CallManager:
                     dead_sockets.add(ws)
             call.connections[role].difference_update(dead_sockets)
 
-
-
     async def broadcast_to_role(self, call_id: str, role: str, payload: dict):
         """
         Phase 3: Broadcast a message to all WebSocket connections for a specific role only.
@@ -345,5 +489,6 @@ class CallManager:
             except Exception:
                 dead_sockets.add(ws)
         call.connections[role].difference_update(dead_sockets)
+
 
 call_manager = CallManager()

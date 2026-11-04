@@ -1,13 +1,18 @@
 /**
  * Web Audio API Security Chime and Beep Synthesizer — Phase 4 Enhanced
  * Generates clear, audible audio tones for PCI Safe Mode transition, confirmation,
- * and realistic interactive recording timeline playback verification.
+ * phone ringing, and realistic interactive recording timeline playback verification.
  */
 class AudioSynthesizer {
   constructor() {
     this.ctx = null;
     this._humOsc = null;
     this._humGain = null;
+    this._ringing = false;
+    this._ringTimer = null;
+    this._outgoingRinging = false;
+    this._outgoingRingTimer = null;
+    this._activeOscillators = [];
   }
 
   async _initContext() {
@@ -149,48 +154,143 @@ class AudioSynthesizer {
   }
 
   /**
-   * Phase 4: Recording Player Ambient Voice Simulation.
-   * Generates gentle subtle harmonic phone hum during normal recorded audio segments.
+   * Phone Ringing: Classic telephone double-ring for incoming calls.
    */
-  async startRecordedAudioHum() {
+  async playIncomingRing() {
+    this.stopIncomingRing();
     try {
       const ctx = await this._initContext();
-      if (!ctx || this._humOsc) return;
+      if (!ctx) return;
 
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      const ringPulse = () => {
+        if (!this._ringing) return;
+        const now = ctx.currentTime;
+        [440, 480].forEach(freq => {
+          try {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now);
 
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(220, ctx.currentTime); // A3 phone harmonic
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.linearRampToValueAtTime(0.08, now + 0.05);
+            gain.gain.setValueAtTime(0.08, now + 0.6);
+            gain.gain.linearRampToValueAtTime(0.0001, now + 0.65);
 
-      gain.gain.setValueAtTime(0.001, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.0001, now + 0.85);
+            gain.gain.linearRampToValueAtTime(0.08, now + 0.9);
+            gain.gain.setValueAtTime(0.08, now + 1.5);
+            gain.gain.linearRampToValueAtTime(0.0001, now + 1.55);
 
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 1.6);
+            this._activeOscillators.push(osc);
+            osc.onended = () => {
+              this._activeOscillators = this._activeOscillators.filter(o => o !== osc);
+            };
+          } catch (e) {}
+        });
+      };
 
-      this._humOsc = osc;
-      this._humGain = gain;
+      this._ringing = true;
+      ringPulse();
+      this._ringTimer = setInterval(ringPulse, 3200);
     } catch (e) {}
   }
 
+  stopIncomingRing() {
+    this._ringing = false;
+    if (this._ringTimer) {
+      clearInterval(this._ringTimer);
+      this._ringTimer = null;
+    }
+    this._stopTrackedOscillators();
+  }
+
   /**
-   * Stop recording player hum immediately (used when hitting the PCI gap or pausing).
+   * Outgoing Ring: Soft ringback tone heard by the caller.
+   */
+  async playOutgoingRing() {
+    this.stopOutgoingRing();
+    try {
+      const ctx = await this._initContext();
+      if (!ctx) return;
+
+      const ringPulse = () => {
+        if (!this._outgoingRinging) return;
+        const now = ctx.currentTime;
+        [440, 480].forEach(freq => {
+          try {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now);
+
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.linearRampToValueAtTime(0.05, now + 0.04);
+            gain.gain.setValueAtTime(0.05, now + 1.8);
+            gain.gain.linearRampToValueAtTime(0.0001, now + 1.85);
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 1.9);
+            this._activeOscillators.push(osc);
+            osc.onended = () => {
+              this._activeOscillators = this._activeOscillators.filter(o => o !== osc);
+            };
+          } catch (e) {}
+        });
+      };
+
+      this._outgoingRinging = true;
+      ringPulse();
+      this._outgoingRingTimer = setInterval(ringPulse, 4000);
+    } catch (e) {}
+  }
+
+  stopOutgoingRing() {
+    this._outgoingRinging = false;
+    if (this._outgoingRingTimer) {
+      clearInterval(this._outgoingRingTimer);
+      this._outgoingRingTimer = null;
+    }
+    this._stopTrackedOscillators();
+  }
+
+  _stopTrackedOscillators() {
+    if (this._activeOscillators && this._activeOscillators.length > 0) {
+      this._activeOscillators.forEach(osc => {
+        try {
+          osc.stop();
+          osc.disconnect();
+        } catch (e) {}
+      });
+      this._activeOscillators = [];
+    }
+  }
+
+  stopAllAudio() {
+    this.stopIncomingRing();
+    this.stopOutgoingRing();
+    this._stopTrackedOscillators();
+  }
+
+  /**
+   * Neutralized: Artificial 220Hz electronic hum oscillator removed.
+   * Real call recording audio is captured via MediaRecorder and played through HTML5 Audio.
+   */
+  async startRecordedAudioHum() {
+    // Intentionally no-op to eliminate artificial electronic humming noise.
+  }
+
+  /**
+   * Stop recording player hum (safe no-op).
    */
   stopRecordedAudioHum() {
-    try {
-      if (this._humGain && this.ctx) {
-        this._humGain.gain.setValueAtTime(0.0001, this.ctx.currentTime);
-      }
-      if (this._humOsc) {
-        this._humOsc.stop();
-        this._humOsc.disconnect();
-        this._humOsc = null;
-      }
-    } catch (e) {
-      this._humOsc = null;
-    }
+    // Intentionally no-op
   }
 }
 

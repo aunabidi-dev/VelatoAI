@@ -95,16 +95,16 @@
 @tailwind utilities;
 
 :root {
-  --bg-primary: #070B0A;
-  --bg-surface: #0E1614;
-  --bg-surface-elevated: #131E1B;
-  --border-muted: #1A2824;
-  --border-subtle: #223831;
-  --primary-green: #00E676;
-  --secondary-mint: #34D399;
-  --text-primary: #EDF3F0;
-  --text-muted: #768782;
-  --text-dim: #4B5A55;
+  --bg-primary: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #f1f5f9;
+  --border-muted: #e2e8f0;
+  --border-subtle: #cbd5e1;
+  --primary-green: #059669;
+  --secondary-mint: #10b981;
+  --text-primary: #0f172a;
+  --text-muted: #64748b;
+  --text-dim: #94a3b8;
 }
 
 *, html, body, button, input, select, textarea {
@@ -122,18 +122,26 @@ body {
   min-height: 100vh;
 }
 
-/* Custom crisp dark scrollbars */
+/* Custom crisp light scrollbars */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #070B0A;
+  background: #f1f5f9;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1A2824;
+  background: #cbd5e1;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #234235;
+  background: #94a3b8;
+}
+
+.wave-bar {
+  width: 4px;
+  height: 20px;
+  border-radius: 9999px;
+  display: inline-block;
+  transition: all 0.2s ease;
 }

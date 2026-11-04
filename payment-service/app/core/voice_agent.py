@@ -193,14 +193,18 @@ def parse_spoken_expiry(text: str) -> Optional[str]:
     if len(digits) == 4:
         m = digits[:2]
         y = digits[2:]
-        if 1 <= int(m) <= 12:
+        m_int = int(m)
+        if 1 <= m_int <= 12:
             return f"{m}/{y}"
+        return None  # Month > 12 is strictly invalid (e.g. 18/35)
     elif len(digits) == 3:
         # e.g. 928 -> 09/28
         m = f"0{digits[0]}"
         y = digits[1:]
-        if 1 <= int(m) <= 12:
+        m_int = int(m)
+        if 1 <= m_int <= 12:
             return f"{m}/{y}"
+        return None  # Invalid
     elif len(digits) == 6:
         # e.g. 122028 -> 12/28
         m = digits[:2]
@@ -236,3 +240,99 @@ class VoiceAgentPrompts:
     PAYMENT_FAILED = (
         "Unable to complete payment verification. Reconnecting you with your agent."
     )
+
+
+class ConversationalVoiceAgent:
+    """
+    Intelligent Conversational Dialogue Manager for PCI Safe Mode.
+    Handles validation failures, customer queries, and in-flight corrections
+    with natural, spoken voice prompts rather than static robotic phrases.
+    """
+
+    @staticmethod
+    def generate_luhn_failure_prompt(brand: str, last4: str, attempt: int = 1) -> str:
+        brand_label = brand if brand and brand != "Unknown" else "card"
+        if attempt == 1:
+            return (
+                f"I received a {brand_label} number ending in {last4}, but the card checksum didn't match. "
+                "Could you please double-check your card and say the 16 digits again clearly?"
+            )
+        elif attempt == 2:
+            return (
+                f"The card checksum for {brand_label} ending in {last4} still didn't verify. "
+                "Please speak the 16 digits slowly in groups of four after the tone."
+            )
+        else:
+            return (
+                f"That card number still didn't pass verification. "
+                "Please try speaking the full card number once more, or you may provide a different card."
+            )
+
+    @staticmethod
+    def generate_incomplete_pan_prompt(digit_count: int, last4: str = "") -> str:
+        suffix = f" ending in {last4}" if last4 else ""
+        return (
+            f"I only caught {digit_count} digits{suffix}. "
+            "Card numbers are typically 16 digits. Please speak your full card number in groups of four after the tone."
+        )
+
+    @staticmethod
+    def generate_expiry_failure_prompt(reason: str, raw_text: str = "") -> str:
+        if not reason:
+            return "Please state the expiration month and year again, for example December 2028."
+        
+        reason_lower = reason.lower()
+        if "expired" in reason_lower:
+            return (
+                f"{reason} For your protection, we require an active card that has not expired. "
+                "Please provide a valid card's expiration date."
+            )
+        elif "month" in reason_lower:
+            return (
+                f"{reason} Calendar months only go from 1 to 12. "
+                "Please state your card's expiration month first, then the two-digit year, like 12 28."
+            )
+        elif "year" in reason_lower:
+            return f"{reason} Please check your card and repeat the expiration date."
+        else:
+            return f"{reason} Please say the expiration month and year after the tone."
+
+    @staticmethod
+    def generate_cvv_failure_prompt(brand: str, digit_count: int = 0) -> str:
+        if brand == "American Express":
+            return (
+                "For American Express, the security code is 4 digits on the front of the card. "
+                "Please say those 4 digits after the tone."
+            )
+        else:
+            brand_label = f"your {brand}" if brand and brand != "Unknown" else "your"
+            return (
+                f"For {brand_label} card, the security code is the 3-digit number printed on the signature strip on the back. "
+                "Please say those 3 digits clearly."
+            )
+
+    @staticmethod
+    def generate_pan_success_prompt(brand: str, last4: str) -> str:
+        brand_label = brand if brand and brand != "Unknown" else "Card"
+        return (
+            f"Card verified: {brand_label} ending in {last4}. "
+            "Please state your card's expiration month and year, for example 12 28."
+        )
+
+    @staticmethod
+    def generate_confirmation_prompt(brand: str, last4: str, expiry: str) -> str:
+        brand_label = brand if brand and brand != "Unknown" else "card"
+        return (
+            f"I have recorded a {brand_label} ending in {last4}, expiring in {expiry}. "
+            "Is this correct? Say yes to confirm, or no to correct."
+        )
+
+    @staticmethod
+    def generate_confusion_prompt() -> str:
+        return (
+            "This is VelatoAI's automated secure payment line. Your agent has been isolated "
+            "and cannot hear this conversation. Please speak your 16-digit card number after the tone to proceed."
+        )
+
+
+conversational_voice_agent = ConversationalVoiceAgent()

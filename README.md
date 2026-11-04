@@ -1,9 +1,9 @@
-# ZytaSafe: Zero-Trust PCI Voice Intercept & Live Support Copilot
+# VelatoAI: Autonomous Voice Payment Handover & PCI Isolation
 
 > **Meta Global AI Developer Hackathon · Startup Track · Theme: Build for Your World · Vantiq Studio**  
 > **Notice:** *Built with Muse Spark Open*
 
-ZytaSafe is a zero-trust audio intercept and agent-assist platform that allows contact-center agents to sell and support customers over voice calls without ever hearing, seeing, or recording credit card numbers. 
+VelatoAI is a zero-trust audio intercept and agent-assist platform that allows contact-center agents to sell and support customers over voice calls without ever hearing, seeing, or recording credit card numbers. 
 
 When payment is required, the human agent presses **PCI Safe Mode**. The agent's audio line is immediately severed at the media server, the call recording pauses with an automated withheld marker, and an automated AI voice agent intercepts the customer line to collect card credentials, perform instant Luhn validation, tokenize via a payment gateway vault, zeroize volatile memory buffers, and reconnect the call.
 
@@ -15,7 +15,7 @@ Alongside this, a **live copilot** powered by **Muse Spark Open on Baseten** lis
 
 In accordance with Section 6 & 16 of the product specification (*"Every model the product calls at runtime is a Meta model. Browser and operating system features, such as the built-in voice, are not model calls"*):
 
-| Component / Pipeline | Type | Technology / Model | Role in ZytaSafe |
+| Component / Pipeline | Type | Technology / Model | Role in VelatoAI |
 | :--- | :--- | :--- | :--- |
 | **Live Copilot Brain** | **Meta Model Call** | **Muse Spark Open on Baseten** | Reads conversation context and retrieved company documents to return structured agent suggestions. |
 | **Speech-to-Text (Primary)** | **Meta Model Call** | **Muse Spark Open Audio Input** | Transcribes short customer speech clips into clean text streams. |
@@ -41,7 +41,7 @@ The system strictly separates operations into two isolated planes:
                                                   │
                                                   ▼
                         ┌──────────────────────────────────────────────────┐
-                        │          ZytaSafe Media & Audio Router           │
+                        │          VelatoAI Media & Audio Router           │
                         └─────────┬───────────────────────────────┬────────┘
                                   │                               │
         [Normal Call Mode]        │                               │  [PCI Safe Mode Engaged]
