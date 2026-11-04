@@ -192,7 +192,7 @@ class BasetenMuseSparkProvider(SparkOpenLocalProvider):
             doc_context = f"\nRelevant Company Knowledge Document:\nTitle: {source_doc_title}\nContent: {doc_content}\n"
 
         system_prompt = (
-            "You are ZytaSafe Live Support Copilot, an enterprise AI assistant for contact center agents. "
+            "You are VelatoAI Live Support Copilot, an enterprise AI assistant for contact center agents. "
             "Based on the customer utterance and any retrieved company policy documents provided below, "
             "formulate a concise, professional, actionable recommendation or exact response script for the human agent. "
             "Keep your response strictly under 2 sentences."

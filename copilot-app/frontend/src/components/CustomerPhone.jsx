@@ -87,7 +87,24 @@ function parseExpiryInput(text) {
   if (matchSlash) {
     const m = matchSlash[1].padStart(2, '0');
     const y = matchSlash[3];
+    const mInt = parseInt(m, 10);
+    const yInt = parseInt(y, 10);
+    const now = new Date();
+    const currentYY = now.getFullYear() % 100;
+    const currentMM = now.getMonth() + 1;
+    if (yInt < currentYY || (yInt === currentYY && mInt < currentMM)) {
+      return null; // Expired card
+    }
     return `${m}/${y}`;
+  }
+
+  // Check for month > 12 in slash format
+  const rawSlash = clean.match(/^(\d{1,2})[\/\-\s]+(20)?(\d{2})$/);
+  if (rawSlash) {
+    const rawM = parseInt(rawSlash[1], 10);
+    if (rawM < 1 || rawM > 12) {
+      return null; // Invalid month
+    }
   }
 
   // Month names
@@ -136,16 +153,34 @@ function parseExpiryInput(text) {
   if (digits.length === 4) {
     const m = digits.slice(0, 2);
     const y = digits.slice(2);
-    if (parseInt(m, 10) >= 1 && parseInt(m, 10) <= 12) {
+    const mInt = parseInt(m, 10);
+    const yInt = parseInt(y, 10);
+    if (mInt >= 1 && mInt <= 12) {
+      const now = new Date();
+      const currentYY = now.getFullYear() % 100;
+      const currentMM = now.getMonth() + 1;
+      if (yInt < currentYY || (yInt === currentYY && mInt < currentMM)) {
+        return null; // Expired card
+      }
       return `${m}/${y}`;
     }
+    return null; // Invalid month > 12
   }
   if (digits.length === 3) {
     const m = digits.slice(0, 1).padStart(2, '0');
     const y = digits.slice(1);
-    if (parseInt(m, 10) >= 1 && parseInt(m, 10) <= 12) {
+    const mInt = parseInt(m, 10);
+    const yInt = parseInt(y, 10);
+    if (mInt >= 1 && mInt <= 12) {
+      const now = new Date();
+      const currentYY = now.getFullYear() % 100;
+      const currentMM = now.getMonth() + 1;
+      if (yInt < currentYY || (yInt === currentYY && mInt < currentMM)) {
+        return null; // Expired card
+      }
       return `${m}/${y}`;
     }
+    return null;
   }
   if (digits.length === 2) {
     return `12/${digits}`;
@@ -191,12 +226,16 @@ export default function CustomerPhone({
   const [isListening, setIsListening] = useState(false);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
   const [isCalling, setIsCalling] = useState(false);
+  const [inputError, setInputError] = useState(null);
+  const [mmsTtsActive, setMmsTtsActive] = useState(false);
   const recognitionRef = useRef(null);
   const autoSubmitTimerRef = useRef(null);
   const sessionRef = useRef(paymentSessionData);
   const shouldListenRef = useRef(false);
   const speechUtteranceRef = useRef(null);
   const ttsFallbackTimerRef = useRef(null);
+  const stuckWatchdogRef = useRef(null);
+  const isStartingRecognitionRef = useRef(false);
 
   useEffect(() => {
     sessionRef.current = paymentSessionData;
@@ -205,7 +244,7 @@ export default function CustomerPhone({
   // Inter-window call event listener for customer phone
   useEffect(() => {
     if (typeof window === 'undefined' || !window.BroadcastChannel) return;
-    const channel = new BroadcastChannel('zytasafe_call_mesh');
+    const channel = new BroadcastChannel('velatoai_call_mesh');
 
     channel.onmessage = (event) => {
       const msg = event.data;
@@ -242,6 +281,7 @@ export default function CustomerPhone({
   // Clean state whenever payment state transitions
   useEffect(() => {
     setCustomInput('');
+    setInputError(null);
     shouldListenRef.current = false;
     if (autoSubmitTimerRef.current) {
       clearTimeout(autoSubmitTimerRef.current);
@@ -271,6 +311,9 @@ export default function CustomerPhone({
       if (ttsFallbackTimerRef.current) {
         clearTimeout(ttsFallbackTimerRef.current);
       }
+      if (stuckWatchdogRef.current) {
+        clearTimeout(stuckWatchdogRef.current);
+      }
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch (e) {}
       }
@@ -280,12 +323,12 @@ export default function CustomerPhone({
     };
   }, []);
 
-  // Text-to-Speech voice agent reader during Safe Mode: AI completes sentence, THEN tone plays, THEN mic listens
+  // TTS engine: Meta MMS TTS (backend) -> Browser Web Speech API (fallback)
+  // Per product spec §6 & §14
   useEffect(() => {
     if (safeModeActive && paymentSessionData?.prompt) {
-      if (ttsFallbackTimerRef.current) {
-        clearTimeout(ttsFallbackTimerRef.current);
-      }
+      if (ttsFallbackTimerRef.current) clearTimeout(ttsFallbackTimerRef.current);
+      if (stuckWatchdogRef.current) clearTimeout(stuckWatchdogRef.current);
 
       // Ensure microphone does NOT listen while AI is speaking
       shouldListenRef.current = false;
@@ -296,6 +339,7 @@ export default function CustomerPhone({
       setIsAiSpeaking(true);
 
       const triggerToneAndListening = () => {
+        if (stuckWatchdogRef.current) clearTimeout(stuckWatchdogRef.current);
         setIsAiSpeaking(false);
         // Play the audible prompt beep 250ms AFTER AI voice finishes
         setTimeout(() => {
@@ -309,49 +353,98 @@ export default function CustomerPhone({
         }, 250);
       };
 
-      if ('speechSynthesis' in window) {
+      // Stuck-state watchdog: force-trigger if AI appears stuck for 10s
+      stuckWatchdogRef.current = setTimeout(() => {
+        if (!shouldListenRef.current) {
+          console.warn('[VelatoAI TTS] Stuck watchdog triggered — forcing tone & mic');
+          triggerToneAndListening();
+        }
+      }, 10000);
+
+      const promptText = paymentSessionData.prompt;
+      const ttsTimeoutMs = Math.min(Math.max(promptText.length * 80, 2000), 6000);
+
+      // Try Meta MMS TTS backend first
+      const tryMMSTTS = async () => {
+        try {
+          const ctrl = new AbortController();
+          const fetchTimer = setTimeout(() => ctrl.abort(), 2500); // 2.5s fast timeout for backend
+          const res = await fetch('/api/tts/speak', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: promptText, session_id: paymentSessionData?.session_id || '' }),
+            signal: ctrl.signal,
+          });
+          clearTimeout(fetchTimer);
+          if (!res.ok) throw new Error(`TTS backend: ${res.status}`);
+          const audioBlob = await res.blob();
+          const audioUrl = URL.createObjectURL(audioBlob);
+          const audio = new Audio(audioUrl);
+          speechUtteranceRef.current = audio;
+          setMmsTtsActive(true);
+
+          audio.onended = () => {
+            URL.revokeObjectURL(audioUrl);
+            clearTimeout(ttsFallbackTimerRef.current);
+            triggerToneAndListening();
+          };
+          audio.onerror = () => {
+            URL.revokeObjectURL(audioUrl);
+            fallbackToBrowserTTS();
+          };
+          ttsFallbackTimerRef.current = setTimeout(() => {
+            audio.pause();
+            triggerToneAndListening();
+          }, ttsTimeoutMs + 2000);
+          audio.play().catch(() => fallbackToBrowserTTS());
+        } catch (e) {
+          fallbackToBrowserTTS();
+        }
+      };
+
+      const fallbackToBrowserTTS = () => {
+        setMmsTtsActive(false);
+        if (!('speechSynthesis' in window)) {
+          triggerToneAndListening();
+          return;
+        }
         try {
           window.speechSynthesis.cancel();
-
-          const utterance = new SpeechSynthesisUtterance(paymentSessionData.prompt);
+          const utterance = new SpeechSynthesisUtterance(promptText);
           utterance.rate = 1.0;
           utterance.pitch = 1.0;
-          speechUtteranceRef.current = utterance; // Prevent Chromium GC freeze
+          speechUtteranceRef.current = utterance;
 
-          // Fallback timer: only trigger if TTS genuinely freezes for >8s
           ttsFallbackTimerRef.current = setTimeout(() => {
             triggerToneAndListening();
-          }, 8000);
+          }, ttsTimeoutMs);
 
           utterance.onstart = () => {
             setIsAiSpeaking(true);
             setIsListening(false);
           };
-
           utterance.onend = () => {
             if (ttsFallbackTimerRef.current) clearTimeout(ttsFallbackTimerRef.current);
             triggerToneAndListening();
           };
-
           utterance.onerror = (e) => {
-            if (e && (e.error === 'interrupted' || e.error === 'canceled')) {
-              return;
-            }
+            if (e && (e.error === 'interrupted' || e.error === 'canceled')) return;
             if (ttsFallbackTimerRef.current) clearTimeout(ttsFallbackTimerRef.current);
             triggerToneAndListening();
           };
-
           window.speechSynthesis.speak(utterance);
         } catch (e) {
           triggerToneAndListening();
         }
-      } else {
-        triggerToneAndListening();
-      }
+      };
+
+      tryMMSTTS();
     }
   }, [paymentSessionData?.prompt, safeModeActive]);
 
   const startRecognition = () => {
+    if (isStartingRecognitionRef.current) return; // Prevent double-start
+    isStartingRecognitionRef.current = true;
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       console.warn("[STT] SpeechRecognition not available in this browser");
@@ -396,6 +489,7 @@ export default function CustomerPhone({
       };
 
       recognition.onerror = (e) => {
+        isStartingRecognitionRef.current = false;
         if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
           shouldListenRef.current = false;
           setIsListening(false);
@@ -412,11 +506,15 @@ export default function CustomerPhone({
 
         if (currentState === "CAPTURING_PAN") {
           const formatted = formatSpokenToDigits(trimmed);
-          const digitsOnly = formatted.replace(/\D/g, '');
-          setCustomInput(formatted);
+          setCustomInput(formatted || trimmed);
 
-          if (digitsOnly.length >= 16) {
-            if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
+          // Give customer time to finish speaking their card turns naturally without premature cutoff
+          if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
+          const digitsOnly = (formatted || trimmed).replace(/\D/g, '');
+          const isHesitationOrQuestion = /\b(hold on|one sec|wait|alice|hear|secure|safe|transfer|why|operator|human)\b/i.test(trimmed);
+
+          // Submit after a natural 1.2s pause in speaking
+          if (digitsOnly.length >= 15 || isHesitationOrQuestion) {
             autoSubmitTimerRef.current = setTimeout(() => {
               shouldListenRef.current = false;
               if (recognitionRef.current) {
@@ -424,43 +522,33 @@ export default function CustomerPhone({
                 try { recognitionRef.current.abort(); } catch (e) {}
                 recognitionRef.current = null;
               }
-              handleCustomSubmit(digitsOnly.slice(0, 16));
-            }, 600);
+              handleCustomSubmit(trimmed);
+            }, 1200);
           }
         } else if (currentState === "CAPTURING_EXPIRY") {
-          const parsed = parseExpiryInput(trimmed);
-          setCustomInput(parsed && parsed.includes('/') ? parsed : trimmed);
-
-          if (parsed && parsed.includes('/')) {
-            if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
-            autoSubmitTimerRef.current = setTimeout(() => {
-              shouldListenRef.current = false;
-              if (recognitionRef.current) {
-                recognitionRef.current.onresult = null;
-                try { recognitionRef.current.abort(); } catch (e) {}
-                recognitionRef.current = null;
-              }
-              handleCustomSubmit(parsed);
-            }, 600);
-          }
+          setCustomInput(trimmed);
+          if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
+          autoSubmitTimerRef.current = setTimeout(() => {
+            shouldListenRef.current = false;
+            if (recognitionRef.current) {
+              recognitionRef.current.onresult = null;
+              try { recognitionRef.current.abort(); } catch (e) {}
+              recognitionRef.current = null;
+            }
+            handleCustomSubmit(trimmed);
+          }, 1100);
         } else if (currentState === "CAPTURING_CVV") {
-          const formatted = formatSpokenToDigits(trimmed);
-          const cvvDigits = formatted.replace(/\D/g, '');
-          setCustomInput(cvvDigits);
-
-          const expectedLen = sessionRef.current?.brand === "American Express" ? 4 : 3;
-          if (cvvDigits.length === expectedLen) {
-            if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
-            autoSubmitTimerRef.current = setTimeout(() => {
-              shouldListenRef.current = false;
-              if (recognitionRef.current) {
-                recognitionRef.current.onresult = null;
-                try { recognitionRef.current.abort(); } catch (e) {}
-                recognitionRef.current = null;
-              }
-              handleCustomSubmit(cvvDigits);
-            }, 500);
-          }
+          setCustomInput(trimmed);
+          if (autoSubmitTimerRef.current) clearTimeout(autoSubmitTimerRef.current);
+          autoSubmitTimerRef.current = setTimeout(() => {
+            shouldListenRef.current = false;
+            if (recognitionRef.current) {
+              recognitionRef.current.onresult = null;
+              try { recognitionRef.current.abort(); } catch (e) {}
+              recognitionRef.current = null;
+            }
+            handleCustomSubmit(trimmed);
+          }, 1000);
         } else if (currentState === "CONFIRMING") {
           setCustomInput(trimmed);
           const isYes = /\b(yes|yeah|yep|confirm|confirmed|correct|sure|right|ok|okay|sounds good|it is|affirmative)\b/i.test(trimmed);
@@ -490,7 +578,9 @@ export default function CustomerPhone({
       };
 
       recognition.start();
+      setTimeout(() => { isStartingRecognitionRef.current = false; }, 300);
     } catch (e) {
+      isStartingRecognitionRef.current = false;
       setIsListening(false);
     }
   };
@@ -529,14 +619,14 @@ export default function CustomerPhone({
     const currentState = sessionRef.current?.state;
 
     if (currentState === "CAPTURING_PAN") {
-      const digitsOnly = textToSend.replace(/\D/g, '');
-      onSendPan(digitsOnly);
+      setInputError(null);
+      onSendPan(textToSend);
     } else if (currentState === "CAPTURING_EXPIRY") {
-      const parsedExp = parseExpiryInput(textToSend);
-      onSendExpiry(parsedExp);
+      setInputError(null);
+      onSendExpiry(textToSend);
     } else if (currentState === "CAPTURING_CVV") {
-      const cvvDigits = textToSend.replace(/\D/g, '');
-      onSendCvv(cvvDigits || textToSend);
+      setInputError(null);
+      onSendCvv(textToSend);
     } else if (currentState === "CONFIRMING") {
       const isYes = /\b(yes|yeah|yep|confirm|confirmed|correct|sure|right|ok|okay|affirmative)\b/i.test(textToSend);
       const isNo = /\b(no|nope|wrong|incorrect|cancel|restart)\b/i.test(textToSend);
@@ -579,29 +669,29 @@ export default function CustomerPhone({
   const cleanDigitsCount = cleanDigits.length;
 
   return (
-    <div className={`w-full max-w-md mx-auto bg-[#0E1614] border border-[#1A2824] rounded-2xl p-6 flex flex-col gap-5 relative text-[#EDF3F0] ${isCustomerWindow ? 'min-h-screen justify-center' : ''}`}>
+    <div className={`w-full max-w-md mx-auto bg-white border border-slate-200 rounded-2xl p-6 flex flex-col gap-5 relative text-slate-900 shadow-sm ${isCustomerWindow ? 'min-h-screen justify-center' : ''}`}>
       {/* Phone Header */}
-      <div className="flex items-center justify-between border-b border-[#1A2824] pb-3">
+      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
         <div className="flex items-center gap-3">
           <div className={`p-2.5 rounded-xl ${
             safeModeActive
-              ? 'bg-[#1C1417] text-rose-400 border border-rose-500/30'
+              ? 'bg-rose-50 text-rose-700 border border-rose-200'
               : isCallActive
-              ? 'bg-[#0B261B] text-[#00E676] border border-[#165038]'
-              : 'bg-[#131E1B] text-[#768782] border border-[#1A2824]'
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              : 'bg-slate-100 text-slate-600 border border-slate-200'
           }`}>
-            <PhoneCall className={`w-5 h-5 ${isCallActive ? 'animate-pulse' : ''}`} />
+            <PhoneCall className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-sm font-bold text-[#EDF3F0]">
-              {safeModeActive ? "ZytaSafe Automated Pay" : isCallActive ? "Live Call Active" : "ZytaSafe Customer Caller"}
+            <div className="text-sm font-bold text-slate-900">
+              {safeModeActive ? "VelatoAI Automated Pay" : isCallActive ? "Live Call Active" : "VelatoAI Customer Caller"}
             </div>
-            <div className="text-[11px] text-[#768782] font-mono">
+            <div className="text-[11px] text-slate-500 font-mono">
               {safeModeActive
-                ? "Voice AI Isolated Data Plane (MMS / Browser Native)"
+                ? "Secure automated voice assistant"
                 : isCallActive
                 ? "Connected to Agent Alice"
-                : "Caller: Jane Doe • Ready to Connect"}
+                : "Caller: Jane Doe • Ready to connect"}
             </div>
           </div>
         </div>
@@ -611,41 +701,41 @@ export default function CustomerPhone({
             <button
               onClick={() => soundFx.playSafeModeBeep()}
               title="Test Tone"
-              className="p-1.5 rounded-lg bg-[#0B261B] border border-[#165038] text-[#768782] hover:text-[#00E676] text-[10px] flex items-center gap-1 transition-colors"
+              className="p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:text-slate-900 text-[10px] flex items-center gap-1 transition-colors shadow-2xs"
             >
-              <Bell className="w-3 h-3" />
+              <Bell className="w-3 h-3 text-slate-500" />
               <span>Beep</span>
             </button>
           )}
-          <span className="text-[10px] font-mono bg-[#070B0A] border border-[#1A2824] px-2 py-0.5 rounded text-[#768782]">
+          <span className="text-[10px] font-mono bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-slate-600">
             Jane Doe
           </span>
         </div>
       </div>
 
       {/* Voice Visualizer */}
-      <div className="bg-[#070B0A] border border-[#1A2824] rounded-xl p-4 flex flex-col items-center justify-center gap-2">
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center gap-2">
         <div className="flex items-center gap-1.5 h-8">
-          <div className={`wave-bar ${isListening ? 'bg-rose-400' : isCallActive ? 'bg-[#00E676]' : 'bg-[#1A2824]'}`} style={{ animationDelay: '0.1s' }}></div>
-          <div className={`wave-bar ${isListening ? 'bg-rose-400' : isCallActive ? 'bg-[#00E676]' : 'bg-[#1A2824]'}`} style={{ animationDelay: '0.3s' }}></div>
-          <div className={`wave-bar ${isListening ? 'bg-rose-400' : isCallActive ? 'bg-[#00E676]' : 'bg-[#1A2824]'}`} style={{ animationDelay: '0.2s' }}></div>
-          <div className={`wave-bar ${isListening ? 'bg-rose-400' : isCallActive ? 'bg-[#00E676]' : 'bg-[#1A2824]'}`} style={{ animationDelay: '0.4s' }}></div>
-          <div className={`wave-bar ${isListening ? 'bg-rose-400' : isCallActive ? 'bg-[#00E676]' : 'bg-[#1A2824]'}`} style={{ animationDelay: '0.15s' }}></div>
+          <div className={`wave-bar ${isListening ? 'bg-rose-500' : isCallActive ? 'bg-emerald-600' : 'bg-slate-300'}`} style={{ animationDelay: '0.1s' }}></div>
+          <div className={`wave-bar ${isListening ? 'bg-rose-500' : isCallActive ? 'bg-emerald-600' : 'bg-slate-300'}`} style={{ animationDelay: '0.3s' }}></div>
+          <div className={`wave-bar ${isListening ? 'bg-rose-500' : isCallActive ? 'bg-emerald-600' : 'bg-slate-300'}`} style={{ animationDelay: '0.2s' }}></div>
+          <div className={`wave-bar ${isListening ? 'bg-rose-500' : isCallActive ? 'bg-emerald-600' : 'bg-slate-300'}`} style={{ animationDelay: '0.4s' }}></div>
+          <div className={`wave-bar ${isListening ? 'bg-rose-500' : isCallActive ? 'bg-emerald-600' : 'bg-slate-300'}`} style={{ animationDelay: '0.15s' }}></div>
         </div>
-        <span className="text-[11px] text-[#768782] font-mono flex items-center gap-1.5">
-          <Volume2 className="w-3.5 h-3.5 text-[#00E676]" />
+        <span className="text-[11px] text-slate-500 font-mono flex items-center gap-1.5">
+          <Volume2 className="w-3.5 h-3.5 text-slate-500" />
           {isListening ? (
-            <span className="text-rose-400 font-semibold animate-pulse">
+            <span className="text-rose-600 font-semibold">
               {paymentSessionData?.state === "CONFIRMING"
-                ? "Microphone Active • Say 'Yes' or 'No'"
-                : "Microphone Active • Listening..."}
+                ? "Microphone active • Say 'Yes' or 'No'"
+                : "Microphone active • Listening..."}
             </span>
           ) : safeModeActive ? (
-            <span className="text-[#00E676]">AI Voice Agent Active (Audio Isolated)</span>
+            <span className="text-emerald-700 font-medium">Automated voice assistant active</span>
           ) : isCallActive ? (
-            "Bidirectional Voice Active"
+            "Bidirectional audio connected"
           ) : (
-            "Microphone on Standby"
+            "Microphone on standby"
           )}
         </span>
       </div>
@@ -656,96 +746,96 @@ export default function CustomerPhone({
           {!isCallActive ? (
             <div className="flex flex-col gap-3">
               {isCalling ? (
-                <div className="flex flex-col items-center gap-3 py-4 px-4 rounded-xl bg-[#0B2017] border border-[#165038]">
-                  <div className="flex items-center gap-2 text-xs font-bold text-[#00E676] animate-pulse">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#00E676] animate-ping" />
-                    <span>Dialing Agent Desktop... (Ringing)</span>
+                <div className="flex flex-col items-center gap-3 py-4 px-4 rounded-xl bg-emerald-50 border border-emerald-200">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-emerald-800">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                    <span>Calling agent desktop... (Ringing)</span>
                   </div>
-                  <p className="text-[11px] text-[#A3B8B0] text-center leading-relaxed">
-                    Agent screen is receiving incoming alert. Awaiting agent to click [Accept Call].
+                  <p className="text-[11px] text-slate-600 text-center leading-relaxed">
+                    The agent screen is receiving an incoming call alert. Awaiting agent to accept.
                   </p>
                   <button
                     onClick={handleHangup}
-                    className="mt-1 px-4 py-2 rounded-lg bg-[#2A1519] hover:bg-[#3D1E24] text-rose-400 border border-rose-500/30 text-xs font-semibold transition-colors flex items-center gap-1.5"
+                    className="mt-1 px-4 py-2 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-2xs"
                   >
                     <PhoneOff className="w-3.5 h-3.5" />
-                    <span>Cancel Call</span>
+                    <span>Cancel call</span>
                   </button>
                 </div>
               ) : callStatus === 'DECLINED' ? (
-                <div className="flex flex-col items-center gap-2.5 py-4 px-4 rounded-xl bg-[#1C1215] border border-rose-500/30">
-                  <div className="flex items-center gap-2 text-xs font-bold text-rose-400">
-                    <PhoneOff className="w-4 h-4" />
-                    <span>Call Declined by Agent Desk</span>
+                <div className="flex flex-col items-center gap-2.5 py-4 px-4 rounded-xl bg-rose-50 border border-rose-200">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-rose-800">
+                    <PhoneOff className="w-4 h-4 text-rose-600" />
+                    <span>Call declined by agent desk</span>
                   </div>
-                  <p className="text-[11px] text-[#A3B8B0] text-center leading-relaxed">
-                    The agent desk was busy or declined the call. Click below to try again whenever you're ready.
+                  <p className="text-[11px] text-slate-600 text-center leading-relaxed">
+                    The agent was busy or declined the call. Click below to try again whenever you're ready.
                   </p>
                   <button
                     onClick={handleCallSupport}
-                    className="mt-1 w-full py-3 px-4 rounded-xl bg-[#00E676] hover:bg-[#00C853] text-[#070B0A] font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-98"
+                    className="mt-1 w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs flex items-center justify-center gap-2 transition-all shadow-xs active:scale-98"
                   >
                     <Phone className="w-4 h-4" />
-                    <span>Call Again</span>
+                    <span>Call again</span>
                   </button>
                 </div>
               ) : (
                 <>
                   <button
                     onClick={handleCallSupport}
-                    className="w-full py-3.5 px-4 rounded-xl bg-[#00E676] hover:bg-[#00C853] text-[#070B0A] font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-98"
+                    className="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center justify-center gap-2 transition-all shadow-xs active:scale-98"
                   >
                     <Phone className="w-4 h-4" />
-                    <span>Call ZytaSafe Support (Live Demo)</span>
+                    <span>Call VelatoAI support</span>
                   </button>
-                  <p className="text-[11px] text-[#768782] text-center leading-relaxed">
-                    Clicking will ring the Agent Desktop window live without carrier phone numbers.
+                  <p className="text-[11px] text-slate-500 text-center leading-relaxed">
+                    Simulates a direct inbound WebRTC customer call to the agent desktop.
                   </p>
                 </>
               )}
             </div>
           ) : (
             <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between bg-[#070B0A] p-2.5 rounded-xl border border-[#1A2824]">
-                <span className="text-xs text-[#EDF3F0] font-semibold flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-[#00E676] animate-pulse" />
-                  Live Call Connected
+              <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                <span className="text-xs text-slate-900 font-semibold flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  Live call connected
                 </span>
                 <button
                   onClick={handleHangup}
-                  className="px-3 py-1 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/40 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  className="px-3 py-1 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
                 >
                   <PhoneOff className="w-3.5 h-3.5" />
-                  <span>Hang Up</span>
+                  <span>Hang up</span>
                 </button>
               </div>
 
               {/* Demo Conversation Starters */}
               <div className="flex flex-col gap-2">
-                <span className="text-[11px] font-mono text-[#768782] uppercase tracking-wider">
-                  Speak to Agent (Demo Phrases):
+                <span className="text-[11px] font-mono text-slate-500 uppercase tracking-wider">
+                  Speak to agent (Demo phrases):
                 </span>
                 <div className="grid grid-cols-1 gap-1.5">
                   <button
                     onClick={() => handleSendPromptTurn("What is the annual pricing and discount rate for Tier 1?")}
-                    className="p-2.5 rounded-xl bg-[#070B0A] hover:bg-[#111C19] border border-[#1A2824] hover:border-[#165038] text-xs text-left text-[#EDF3F0] flex items-center justify-between transition-all"
+                    className="p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs text-left text-slate-800 flex items-center justify-between transition-all shadow-2xs"
                   >
                     <span>"What is the annual pricing & discounts?"</span>
-                    <Tag className="w-3.5 h-3.5 text-[#00E676] shrink-0" />
+                    <Tag className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                   </button>
                   <button
                     onClick={() => handleSendPromptTurn("Can I get a refund if I cancel my subscription?")}
-                    className="p-2.5 rounded-xl bg-[#070B0A] hover:bg-[#111C19] border border-[#1A2824] hover:border-[#165038] text-xs text-left text-[#EDF3F0] flex items-center justify-between transition-all"
+                    className="p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs text-left text-slate-800 flex items-center justify-between transition-all shadow-2xs"
                   >
                     <span>"Can I get a refund if I cancel?"</span>
-                    <FileText className="w-3.5 h-3.5 text-[#34D399] shrink-0" />
+                    <FileText className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                   </button>
                   <button
                     onClick={() => handleSendPromptTurn("I am ready to upgrade and pay for the annual plan.")}
-                    className="p-2.5 rounded-xl bg-[#070B0A] hover:bg-[#111C19] border border-[#1A2824] hover:border-amber-500/40 text-xs text-left text-amber-300 flex items-center justify-between transition-all"
+                    className="p-2.5 rounded-xl bg-amber-50/70 hover:bg-amber-100/60 border border-amber-200 text-xs text-left text-amber-900 flex items-center justify-between transition-all shadow-2xs"
                   >
                     <span>"I am ready to pay with my credit card."</span>
-                    <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                   </button>
                 </div>
               </div>
@@ -763,7 +853,7 @@ export default function CustomerPhone({
                     }
                   }}
                   placeholder="Type or speak customer utterance..."
-                  className="flex-1 bg-[#070B0A] border border-[#1A2824] focus:border-[#00E676] rounded-xl px-3 py-2 text-xs text-[#EDF3F0] placeholder:text-[#4B5A55] outline-none"
+                  className="flex-1 bg-white border border-slate-300 focus:border-slate-500 rounded-xl px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 outline-none transition-colors"
                 />
                 <button
                   onClick={() => {
@@ -773,7 +863,7 @@ export default function CustomerPhone({
                     }
                   }}
                   disabled={!normalSpeechInput.trim()}
-                  className="p-2 rounded-xl bg-[#00E676] hover:bg-[#00C853] disabled:opacity-40 text-[#070B0A] font-bold transition-all"
+                  className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-medium transition-all shadow-2xs"
                 >
                   <Send className="w-4 h-4" />
                 </button>
@@ -786,32 +876,32 @@ export default function CustomerPhone({
       {/* ── SAFE MODE VOICE DIALOGUE PANEL (Automated PCI Isolation) ────────── */}
       {safeModeActive && (
         <div className="flex flex-col gap-4">
-          <div className="bg-[#0B261B] border border-[#165038] p-3.5 rounded-xl text-xs text-[#EDF3F0] leading-relaxed flex items-start gap-2.5">
-            <Sparkles className="w-4 h-4 text-[#00E676] shrink-0 mt-0.5" />
+          <div className="bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl text-xs text-slate-900 leading-relaxed flex items-start gap-2.5">
+            <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
             <div>
-              <span className="font-bold text-[#00E676] block mb-1">Automated Voice Agent:</span>
-              <p>{paymentSessionData?.prompt || "Please speak your 16-digit card number after the tone."}</p>
+              <span className="font-bold text-emerald-900 block mb-1">Automated Voice Agent:</span>
+              <p className="text-slate-800">{paymentSessionData?.prompt || "Please speak your 16-digit card number after the tone."}</p>
             </div>
           </div>
 
           {paymentSessionData?.last4 && (
-            <div className="bg-[#070B0A] border border-[#165038] p-2.5 rounded-lg text-xs font-mono flex items-center justify-between">
-              <span className="text-[#768782]">Verified Card:</span>
-              <span className="text-[#00E676] font-bold">
+            <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-lg text-xs font-mono flex items-center justify-between">
+              <span className="text-slate-500">Verified Card:</span>
+              <span className="text-emerald-700 font-bold">
                 {paymentSessionData.brand || "Card"} ending in **** {paymentSessionData.last4}
               </span>
             </div>
           )}
 
           {paymentSessionData?.state !== "COMPLETED" && (
-            <div className="flex flex-col gap-2.5 bg-[#070B0A] border border-[#1A2824] p-3.5 rounded-xl">
+            <div className="flex flex-col gap-2.5 bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-mono text-[#EDF3F0] font-bold flex items-center gap-1.5">
-                  <Radio className={`w-3.5 h-3.5 ${isListening ? 'text-rose-400 animate-ping' : 'text-[#00E676]'}`} />
-                  Live Voice Microphone:
+                <span className="text-[11px] font-mono text-slate-900 font-bold flex items-center gap-1.5">
+                  <Radio className={`w-3.5 h-3.5 ${isListening ? 'text-rose-500' : 'text-emerald-600'}`} />
+                  Live voice input:
                 </span>
                 {cleanDigitsCount > 0 && paymentSessionData?.state === "CAPTURING_PAN" && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded font-bold bg-[#0B261B] text-[#00E676] border border-[#165038]">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded font-bold bg-white text-slate-700 border border-slate-200">
                     {cleanDigitsCount} Digits Heard
                   </span>
                 )}
@@ -821,18 +911,18 @@ export default function CustomerPhone({
                 type="button"
                 onClick={toggleMicrophone}
                 disabled={isAiSpeaking}
-                className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+                className={`w-full py-2.5 px-4 rounded-xl font-medium text-xs flex items-center justify-center gap-2 transition-all shadow-xs ${
                   isAiSpeaking
-                    ? 'bg-amber-950/80 text-amber-300 border border-amber-500/40 cursor-wait'
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300 cursor-wait'
                     : isListening
-                    ? 'bg-rose-600 hover:bg-rose-500 text-white animate-pulse border border-rose-400'
-                    : 'bg-[#00E676] hover:bg-[#00C853] text-[#070B0A] font-bold'
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                 }`}
               >
                 {isAiSpeaking ? (
                   <>
-                    <Volume2 className="w-4 h-4 animate-bounce text-amber-400" />
-                    <span>AI Agent Speaking Prompt... (Beep incoming)</span>
+                    <Volume2 className="w-4 h-4 text-amber-700" />
+                    <span>Agent speaking prompt... (Beep incoming)</span>
                   </>
                 ) : isListening ? (
                   <>
@@ -848,16 +938,38 @@ export default function CustomerPhone({
                     <Mic className="w-4 h-4" />
                     <span>
                       {paymentSessionData?.state === "CAPTURING_PAN"
-                        ? "Tap to Speak Card Number (Mic Ready)"
+                        ? "Tap to speak card number"
                         : paymentSessionData?.state === "CAPTURING_EXPIRY"
-                        ? "Tap to Speak Expiry (e.g. December 2028)"
+                        ? "Tap to speak expiry (e.g. December 2028)"
                         : paymentSessionData?.state === "CAPTURING_CVV"
-                        ? "Tap to Speak CVV (e.g. 1 2 3)"
-                        : "Tap to Speak (Say 'Yes' to Confirm)"}
+                        ? "Tap to speak CVV (e.g. 1 2 3)"
+                        : "Tap to speak (Say 'Yes' to confirm)"}
                     </span>
                   </>
                 )}
               </button>
+
+              {/* Real-time Validation Error Banner */}
+              {inputError && (
+                <div className="flex items-start gap-2 p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-600" />
+                  <span>{inputError}</span>
+                </div>
+              )}
+
+              {/* Live Luhn & Format Status Badge for Card Entry */}
+              {paymentSessionData?.state === "CAPTURING_PAN" && cleanDigitsCount >= 13 && (
+                <div className="flex items-center justify-between px-1 text-[11px] font-mono">
+                  <span className="text-slate-500">Luhn checksum status:</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                    checkLuhn(cleanDigits)
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      : 'bg-rose-50 text-rose-800 border-rose-200'
+                  }`}>
+                    {checkLuhn(cleanDigits) ? '✓ Valid Checksum' : '✗ Invalid Luhn Checksum'}
+                  </span>
+                </div>
+              )}
 
               <div className="flex items-center gap-2 mt-1">
                 <input
@@ -874,14 +986,14 @@ export default function CustomerPhone({
                       ? "Say or type: 1 2 3..."
                       : "Say or type: Yes..."
                   }
-                  className="flex-1 bg-[#0E1614] border border-[#1A2824] focus:border-[#00E676] rounded-xl px-3 py-2 text-xs text-[#EDF3F0] placeholder:text-[#768782] focus:outline-none font-mono"
+                  className="flex-1 bg-white border border-slate-300 focus:border-slate-500 rounded-xl px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none font-mono transition-colors"
                 />
 
                 <button
                   type="button"
                   onClick={() => handleCustomSubmit()}
                   disabled={!customInput.trim()}
-                  className="bg-[#00E676] hover:bg-[#00C853] disabled:opacity-40 text-[#070B0A] font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 transition-all"
+                  className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-medium px-3 py-2 rounded-xl text-xs flex items-center gap-1 transition-all shadow-2xs"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span>Send</span>
@@ -893,23 +1005,30 @@ export default function CustomerPhone({
           {/* Quick-Action Presets */}
           {paymentSessionData?.state === "CAPTURING_PAN" && (
             <div className="flex flex-col gap-2">
-              <span className="text-[11px] font-mono text-[#768782] uppercase">
-                Quick Test Card Presets:
+              <span className="text-[11px] font-mono text-slate-500 uppercase">
+                Quick test card presets:
               </span>
               <div className="grid grid-cols-1 gap-1.5">
                 <button
-                  onClick={() => onSendPan("4000 1234 5678 0987")}
-                  className="bg-[#070B0A] hover:bg-[#111C19] border border-[#165038] p-2.5 rounded-xl text-xs font-mono text-[#EDF3F0] text-left flex items-center justify-between transition-all"
+                  onClick={() => onSendPan("4000 1234 5678 0982")}
+                  className="bg-white hover:bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-mono text-slate-800 text-left flex items-center justify-between transition-all shadow-2xs"
                 >
-                  <span>Standard Test Card (ends 0987)</span>
-                  <span className="text-[10px] text-[#00E676] bg-[#0E1614] border border-[#165038] px-1.5 py-0.5 rounded font-bold">Safe Mode Target</span>
+                  <span>Standard Test Card (ends 0982)</span>
+                  <span className="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-medium">Safe Mode Target (Valid Checksum)</span>
                 </button>
                 <button
                   onClick={() => onSendPan("4242 4242 4242 4242")}
-                  className="bg-[#070B0A] hover:bg-[#111C19] border border-[#1A2824] p-2.5 rounded-xl text-xs font-mono text-[#EDF3F0] text-left flex items-center justify-between transition-all"
+                  className="bg-white hover:bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-mono text-slate-800 text-left flex items-center justify-between transition-all shadow-2xs"
                 >
                   <span>Visa Standard Test (ends 4242)</span>
-                  <span className="text-[10px] text-[#34D399] bg-[#0E1614] border border-[#1A2824] px-1.5 py-0.5 rounded">Standard Test</span>
+                  <span className="text-[10px] text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">Standard Test</span>
+                </button>
+                <button
+                  onClick={() => onSendPan("4000 1234 5678 0987")}
+                  className="bg-amber-50/60 hover:bg-amber-100/50 border border-amber-200 p-2.5 rounded-xl text-xs font-mono text-amber-900 text-left flex items-center justify-between transition-all shadow-2xs"
+                >
+                  <span>Checksum Failure Test (ends 0987)</span>
+                  <span className="text-[10px] text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded font-medium">Simulate Luhn Failure</span>
                 </button>
               </div>
             </div>
@@ -917,25 +1036,25 @@ export default function CustomerPhone({
 
           {paymentSessionData?.state === "CAPTURING_EXPIRY" && (
             <div className="flex flex-col gap-2">
-              <span className="text-[11px] font-mono text-[#768782] uppercase">
-                Quick Expiry Options:
+              <span className="text-[11px] font-mono text-slate-500 uppercase">
+                Quick expiry presets:
               </span>
               <div className="grid grid-cols-3 gap-2">
                 <button
                   onClick={() => onSendExpiry("09/28")}
-                  className="bg-[#070B0A] hover:bg-[#111C19] border border-[#165038] p-2.5 rounded-xl text-xs font-mono text-[#00E676] text-center font-bold"
+                  className="bg-white hover:bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-mono text-emerald-700 text-center font-bold shadow-2xs"
                 >
                   09 / 28
                 </button>
                 <button
                   onClick={() => onSendExpiry("12/28")}
-                  className="bg-[#070B0A] hover:bg-[#111C19] border border-[#1A2824] p-2.5 rounded-xl text-xs font-mono text-[#EDF3F0] text-center font-bold"
+                  className="bg-white hover:bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-mono text-slate-800 text-center font-bold shadow-2xs"
                 >
                   12 / 28
                 </button>
                 <button
                   onClick={() => onSendExpiry("05/30")}
-                  className="bg-[#070B0A] hover:bg-[#111C19] border border-[#1A2824] p-2.5 rounded-xl text-xs font-mono text-[#EDF3F0] text-center font-bold"
+                  className="bg-white hover:bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-mono text-slate-800 text-center font-bold shadow-2xs"
                 >
                   05 / 30
                 </button>
@@ -945,19 +1064,19 @@ export default function CustomerPhone({
 
           {paymentSessionData?.state === "CAPTURING_CVV" && (
             <div className="flex flex-col gap-2">
-              <span className="text-[11px] font-mono text-[#768782] uppercase">
-                Quick Security Code (CVV):
+              <span className="text-[11px] font-mono text-slate-500 uppercase">
+                Quick security code (CVV):
               </span>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => onSendCvv("123")}
-                  className="bg-[#070B0A] hover:bg-[#111C19] border border-[#165038] p-2.5 rounded-xl text-xs font-mono text-[#00E676] text-center font-bold"
+                  className="bg-white hover:bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-mono text-emerald-700 text-center font-bold shadow-2xs"
                 >
                   1 2 3
                 </button>
                 <button
                   onClick={() => onSendCvv("888")}
-                  className="bg-[#070B0A] hover:bg-[#111C19] border border-[#1A2824] p-2.5 rounded-xl text-xs font-mono text-[#EDF3F0] text-center font-bold"
+                  className="bg-white hover:bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-mono text-slate-800 text-center font-bold shadow-2xs"
                 >
                   8 8 8
                 </button>
@@ -967,9 +1086,9 @@ export default function CustomerPhone({
 
           {paymentSessionData?.state === "CONFIRMING" && (
             <div className="flex flex-col gap-3">
-              <div className="bg-[#1C1A14] border border-amber-500/40 p-3 rounded-xl text-xs text-amber-200">
-                Zero-Trust Confirmation: The AI speaks and shows <strong>ONLY</strong> the last 4 digits ({paymentSessionData?.last4 || "----"}) and expiry ({paymentSessionData?.expiry || "--/--"}).
-                <span className="block mt-1 text-[#00E676] font-semibold">
+              <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-900">
+                Zero-Trust Confirmation: The assistant speaks and shows <strong>ONLY</strong> the last 4 digits ({paymentSessionData?.last4 || "----"}) and expiry ({paymentSessionData?.expiry || "--/--"}).
+                <span className="block mt-1 text-emerald-800 font-semibold">
                   Voice command: Speak "Yes" into your microphone or click the button below to complete.
                 </span>
               </div>
@@ -979,14 +1098,14 @@ export default function CustomerPhone({
                     soundFx.playTokenSuccessChime();
                     onConfirmPayment(true);
                   }}
-                  className="bg-[#00E676] hover:bg-[#00C853] text-[#070B0A] font-bold p-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-md"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium p-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs"
                 >
                   <Check className="w-4 h-4" />
                   <span>"Yes, Confirm"</span>
                 </button>
                 <button
                   onClick={() => onConfirmPayment(false)}
-                  className="bg-[#070B0A] hover:bg-[#111C19] text-[#768782] hover:text-[#EDF3F0] font-medium p-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all border border-[#1A2824]"
+                  className="bg-white hover:bg-slate-50 text-slate-700 font-medium p-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all border border-slate-300 shadow-2xs"
                 >
                   <RotateCcw className="w-4 h-4" />
                   <span>"No, Restart"</span>
@@ -996,12 +1115,12 @@ export default function CustomerPhone({
           )}
 
           {paymentCompleted && (
-            <div className="bg-[#0B261B] border border-[#165038] p-4 rounded-xl flex flex-col items-center justify-center text-center gap-2">
-              <ShieldCheck className="w-8 h-8 text-[#00E676]" />
-              <div className="text-xs font-bold text-[#00E676] uppercase tracking-wider">
-                Payment Authorized & Tokenized
+            <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex flex-col items-center justify-center text-center gap-2">
+              <ShieldCheck className="w-8 h-8 text-emerald-600" />
+              <div className="text-xs font-bold text-emerald-800 uppercase tracking-wider">
+                Payment authorized & tokenized
               </div>
-              <p className="text-[11px] text-[#768782]">
+              <p className="text-[11px] text-slate-600">
                 Your card has been safely tokenized. Returning to your agent now.
               </p>
             </div>

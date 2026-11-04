@@ -17,7 +17,7 @@ export default class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    console.error("[ZytaSafe ErrorBoundary Caught]:", error, errorInfo);
+    console.error("[VelatoAI ErrorBoundary Caught]:", error, errorInfo);
     this.setState({ errorInfo });
   }
 
@@ -37,7 +37,7 @@ export default class ErrorBoundary extends React.Component {
 
             <div>
               <h2 className="text-xl font-bold text-slate-100">
-                ZytaSafe Runtime Recovery
+                VelatoAI Runtime Recovery
               </h2>
               <p className="text-xs text-slate-400 mt-1">
                 A component error occurred, but zero-trust isolation was preserved.
@@ -66,7 +66,7 @@ export default class ErrorBoundary extends React.Component {
             </div>
 
             <div className="text-[11px] font-mono text-slate-500 mt-2">
-              ZytaSafe Zero-Trust Voice Intercept · Memory Protection Active
+              VelatoAI Autonomous Voice Payment Handover & PCI Isolation
             </div>
           </div>
         </div>

@@ -50,8 +50,11 @@ class MetaSpeechSTTEngine:
         """Attempts to load Meta open-weight speech model on CPU / local compute."""
         # 1. Attempt wav2vec 2.0 if transformers/torch is installed
         try:
-            from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
-            import torch
+            import importlib
+            transformers = importlib.import_module("transformers")  # type: ignore
+            Wav2Vec2ForCTC = getattr(transformers, "Wav2Vec2ForCTC")
+            Wav2Vec2Processor = getattr(transformers, "Wav2Vec2Processor")
+            torch = importlib.import_module("torch")  # type: ignore
             wav2vec_model_id = os.getenv("META_WAV2VEC_MODEL", "facebook/wav2vec2-base-960h")
             self._processor = Wav2Vec2Processor.from_pretrained(wav2vec_model_id)
             self._model = Wav2Vec2ForCTC.from_pretrained(wav2vec_model_id).to(self.device)
@@ -97,8 +100,9 @@ class MetaSpeechSTTEngine:
         # If wav2vec2 model is loaded
         if self._model is not None and hasattr(self, "_processor"):
             try:
-                import torch
-                import soundfile as sf
+                import importlib
+                torch = importlib.import_module("torch")  # type: ignore
+                sf = importlib.import_module("soundfile")  # type: ignore
                 with io.BytesIO(audio_bytes) as audio_file:
                     speech, sample_rate = sf.read(audio_file)
                     input_values = self._processor(speech, sampling_rate=sample_rate, return_tensors="pt").input_values
@@ -129,7 +133,7 @@ class MetaSpeechSTTEngine:
         if isinstance(audio_or_text, bytes):
             raw_text = self.transcribe_audio_bytes(audio_or_text)
         else:
-            raw_text = str(audio_or_text)
+            raw_text = audio_or_text
 
         cleaned_text = self.filter_filler_words(raw_text)
 
@@ -164,6 +168,4 @@ class MetaSpeechSTTEngine:
 # Global singleton engine
 meta_speech_engine = MetaSpeechSTTEngine()
 
-# Backward-compatible aliases
-WhisperSTTEngine = MetaSpeechSTTEngine
-whisper_engine = meta_speech_engine
+

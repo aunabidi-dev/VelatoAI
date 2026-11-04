@@ -1,0 +1,11 @@
+[tool.pyright]
+extraPaths = [
+    "payment-service",
+    "copilot-app/backend"
+]
+
+[tool.pyrefly]
+search-path = [
+    "payment-service",
+    "copilot-app/backend"
+]

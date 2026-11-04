@@ -42,18 +42,49 @@ def detect_card_brand(card_number: str) -> str:
 
 def validate_expiry(expiry_str: str) -> bool:
     """
-    Validates MM/YY or MM/YYYY format and checks reasonable range.
+    Validates MM/YY or MM/YYYY format, checks valid month range,
+    and rejects cards that have already expired.
     """
+    import datetime
     clean = expiry_str.strip().replace(" ", "")
     match = re.match(r"^(0[1-9]|1[0-2])[\/\-]?([2-9]\d)$", clean)
     if not match:
         return False
     month, year_suffix = int(match.group(1)), int(match.group(2))
-    # Hackathon timeline is 2026 onwards
     year = 2000 + year_suffix
     if year < 2024 or year > 2045:
         return False
+    # Reject cards that have already expired (past the last day of expiry month)
+    today = datetime.date.today()
+    exp_last_day = datetime.date(year, month, 1)
+    current_month_start = datetime.date(today.year, today.month, 1)
+    if exp_last_day < current_month_start:
+        return False
     return True
+
+def validate_expiry_reason(expiry_str: str) -> str:
+    """Returns a human-readable reason for expiry rejection, or empty string if valid."""
+    import datetime
+    clean = expiry_str.strip().replace(" ", "")
+    match = re.match(r"^(0[1-9]|1[0-2])[\/\-]?([2-9]\d)$", clean)
+    if not match:
+        # Check if month part is out of range
+        raw_match = re.match(r"^(\d{1,2})[\/\-\s]?(\d{2,4})$", clean)
+        if raw_match:
+            m = int(raw_match.group(1))
+            if m < 1 or m > 12:
+                return f"Month {m} is not valid. Please say a month between 1 and 12."
+        return "Please state the expiration month and year in MM YY format, for example 12 28."
+    month, year_suffix = int(match.group(1)), int(match.group(2))
+    year = 2000 + year_suffix
+    if year < 2024 or year > 2045:
+        return f"Year 20{year_suffix} is outside the valid range. Please check and repeat the expiry date."
+    today = datetime.date.today()
+    exp_last_day = datetime.date(year, month, 1)
+    current_month_start = datetime.date(today.year, today.month, 1)
+    if exp_last_day < current_month_start:
+        return f"This card expired in {month:02d}/{year_suffix}. Please use a valid card."
+    return ""
 
 def validate_cvv(cvv_str: str, brand: str = "Unknown") -> bool:
     """Validates CVV (3 digits for most, 4 digits for Amex)."""

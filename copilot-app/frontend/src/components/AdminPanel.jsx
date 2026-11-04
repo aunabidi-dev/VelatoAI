@@ -116,31 +116,31 @@ export default function AdminPanel({ agentRole = 'admin', onBack }) {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto flex flex-col gap-6">
+    <div className="w-full max-w-4xl mx-auto flex flex-col gap-5">
       {/* Header */}
-      <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-5 flex items-center justify-between">
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 flex items-center justify-between shadow-xs">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-[#0B261B] border border-[#165038]">
-            <BookOpen className="w-5 h-5 text-[#00E676]" />
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600">
+            <BookOpen className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-[#EDF3F0]">Knowledge Base & Copilot Grounding</h2>
-            <p className="text-xs text-[#768782] mt-0.5">
-              Enterprise policies and scripts retrieved during live customer calls by Muse Spark Open.
+            <h2 className="text-base font-bold text-slate-900">Knowledge Base & Copilot Grounding</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Enterprise policies and scripts retrieved during live customer calls to guide support agents.
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <span className={`text-[11px] font-mono px-3 py-1 rounded-full border ${
             agentRole === 'admin'
-              ? 'bg-[#0B2A1E] text-[#00E676] border-[#165038]'
-              : 'bg-[#131E1B] text-[#768782] border-[#1A2824]'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-medium'
+              : 'bg-slate-100 text-slate-600 border-slate-200'
           }`}>
-            {agentRole === 'admin' ? '🛡️ Admin (Full Access)' : '👤 Agent (Read-Only)'}
+            {agentRole === 'admin' ? 'Admin • Full Access' : 'Agent • Read-Only'}
           </span>
           <button
             onClick={fetchDocuments}
-            className="p-2 text-[#768782] hover:text-[#00E676] transition-colors"
+            className="p-2 text-slate-400 hover:text-slate-700 transition-colors rounded-lg hover:bg-slate-100"
             title="Refresh documents"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
@@ -152,29 +152,29 @@ export default function AdminPanel({ agentRole = 'admin', onBack }) {
       {notification && (
         <div className={`rounded-xl px-4 py-3 flex items-center gap-3 text-xs border ${
           notification.type === 'success'
-            ? 'border-[#165038] bg-[#0B261B] text-[#00E676]'
-            : 'border-rose-500/40 bg-rose-950/20 text-rose-300'
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+            : 'border-rose-200 bg-rose-50 text-rose-900'
         }`}>
           {notification.type === 'success'
-            ? <CheckCircle2 className="w-4 h-4 shrink-0" />
-            : <AlertCircle className="w-4 h-4 shrink-0" />}
+            ? <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+            : <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />}
           <span>{notification.message}</span>
-          <button onClick={() => setNotification(null)} className="ml-auto">
-            <X className="w-3 h-3" />
+          <button onClick={() => setNotification(null)} className="ml-auto text-slate-400 hover:text-slate-600">
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
       {/* Upload Form (Admin only) or Read-Only Notice (Agent) */}
       {agentRole === 'admin' ? (
-        <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-6 flex flex-col gap-4">
-          <div className="flex items-center gap-2 border-b border-[#1A2824] pb-3">
-            <Plus className="w-4 h-4 text-[#00E676]" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[#EDF3F0]">Upload New Grounding Document</h3>
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col gap-4 shadow-xs">
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+            <Plus className="w-4 h-4 text-emerald-600" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">Upload New Grounding Document</h3>
           </div>
           <form onSubmit={handleUpload} className="flex flex-col gap-3">
             <div>
-              <label className="text-[11px] text-[#768782] uppercase tracking-wider font-mono mb-1.5 block">
+              <label className="text-[11px] text-slate-500 uppercase tracking-wider font-mono mb-1.5 block">
                 Document Title *
               </label>
               <input
@@ -182,27 +182,27 @@ export default function AdminPanel({ agentRole = 'admin', onBack }) {
                 value={uploadTitle}
                 onChange={e => setUploadTitle(e.target.value)}
                 placeholder="e.g. Refund Policy v3.2, Billing Escalation Guide"
-                className="w-full bg-[#070B0A] border border-[#1A2824] rounded-xl px-3 py-2.5 text-xs text-[#EDF3F0] placeholder:text-[#4B5A55] focus:outline-none focus:border-[#00E676] transition-colors"
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500 transition-colors"
                 maxLength={200}
               />
             </div>
             <div>
-              <label className="text-[11px] text-[#768782] uppercase tracking-wider font-mono mb-1.5 block">
+              <label className="text-[11px] text-slate-500 uppercase tracking-wider font-mono mb-1.5 block">
                 Document Content *
               </label>
               <textarea
                 value={uploadContent}
                 onChange={e => setUploadContent(e.target.value)}
-                placeholder="Paste the policy text, pricing tables, or customer objection script that Muse Spark Open should retrieve..."
+                placeholder="Paste the policy text, pricing tables, or customer objection script for the copilot to retrieve..."
                 rows={5}
-                className="w-full bg-[#070B0A] border border-[#1A2824] rounded-xl px-3 py-2.5 text-xs text-[#EDF3F0] placeholder:text-[#4B5A55] focus:outline-none focus:border-[#00E676] transition-colors resize-y font-mono"
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500 transition-colors resize-y font-mono"
               />
             </div>
             <div className="flex justify-end mt-1">
               <button
                 type="submit"
                 disabled={uploading || !uploadTitle.trim() || !uploadContent.trim()}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#00E676] hover:bg-[#00C853] disabled:opacity-40 text-[#070B0A] font-bold text-xs transition-all shadow-sm"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-medium text-xs transition-all shadow-xs"
               >
                 <Upload className="w-3.5 h-3.5" />
                 <span>{uploading ? 'Indexing into Vector Store...' : 'Upload & Ground'}</span>
@@ -211,49 +211,49 @@ export default function AdminPanel({ agentRole = 'admin', onBack }) {
           </form>
         </div>
       ) : (
-        <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-5 flex items-center justify-between">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 flex items-center justify-between shadow-xs">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-[#111C19] border border-[#1C2C28] text-[#768782]">
-              <Lock className="w-5 h-5 text-[#34D399]" />
+            <div className="p-2.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-500">
+              <Lock className="w-5 h-5 text-slate-700" />
             </div>
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#EDF3F0]">Read-Only Knowledge Base</h3>
-              <p className="text-xs text-[#768782] mt-0.5">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">Read-Only Knowledge Base</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
                 Agents have view-only access to company policies and scripts. Document uploads and edits require Admin privileges.
               </p>
             </div>
           </div>
-          <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-[#111C19] text-[#768782] border border-[#1A2824]">
+          <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
             RBAC: Protected
           </span>
         </div>
       )}
 
       {/* Documents List */}
-      <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-6 flex flex-col gap-4">
-        <div className="flex items-center justify-between border-b border-[#1A2824] pb-3">
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col gap-4 shadow-xs">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
           <div className="flex items-center gap-2">
-            <FileText className="w-4 h-4 text-[#00E676]" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[#EDF3F0]">
+            <FileText className="w-4 h-4 text-emerald-600" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
               Active Knowledge Documents ({documents.length})
             </h3>
           </div>
-          <span className="text-[11px] font-mono text-[#768782]">
-            Grounded in Baseten Muse Spark Open
+          <span className="text-[11px] font-mono text-slate-500">
+            Real-Time Semantic Grounding
           </span>
         </div>
 
         {isLoading ? (
-          <div className="py-12 flex flex-col items-center justify-center gap-2 text-[#768782]">
-            <RefreshCw className="w-5 h-5 animate-spin text-[#00E676]" />
+          <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-500">
+            <RefreshCw className="w-5 h-5 animate-spin text-slate-600" />
             <span className="text-xs font-mono">Loading knowledge base...</span>
           </div>
         ) : documents.length === 0 ? (
-          <div className="py-12 flex flex-col items-center justify-center gap-2 text-[#768782] text-center">
-            <FileText className="w-8 h-8 text-[#1A2824]" />
+          <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-500 text-center">
+            <FileText className="w-8 h-8 text-slate-300" />
             <p className="text-xs">No documents uploaded yet.</p>
             {agentRole === 'admin' && (
-              <p className="text-[11px] text-[#4B5A55]">Use the upload form above to index your first policy.</p>
+              <p className="text-[11px] text-slate-400">Use the upload form above to index your first policy.</p>
             )}
           </div>
         ) : (
@@ -263,24 +263,24 @@ export default function AdminPanel({ agentRole = 'admin', onBack }) {
               return (
                 <div
                   key={doc.id}
-                  className="rounded-xl border border-[#1A2824] bg-[#070B0A] overflow-hidden transition-all hover:border-[#1E302B]"
+                  className="rounded-xl border border-slate-200 bg-slate-50/70 overflow-hidden transition-all hover:border-slate-300"
                 >
                   <div className="p-3.5 flex items-center justify-between gap-3">
                     <div
                       className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
                       onClick={() => setExpandedDoc(isExpanded ? null : doc.id)}
                     >
-                      <div className="w-7 h-7 rounded-lg bg-[#0B261B] border border-[#165038] flex items-center justify-center text-[#00E676] shrink-0">
+                      <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
                         <FileText className="w-3.5 h-3.5" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="text-xs font-bold text-[#EDF3F0] truncate flex items-center gap-2">
+                        <div className="text-xs font-semibold text-slate-900 truncate flex items-center gap-2">
                           <span>{doc.title}</span>
-                          <span className="text-[10px] font-mono text-[#34D399] bg-[#0B2A1E] border border-[#165038] px-1.5 py-0.2 rounded">
+                          <span className="text-[10px] font-mono text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded font-medium">
                             {doc.chunk_count || 1} chunks
                           </span>
                         </div>
-                        <div className="text-[10px] font-mono text-[#768782] mt-0.5">
+                        <div className="text-[10px] font-mono text-slate-500 mt-0.5">
                           ID: {doc.id} • Added: {formatDate(doc.created_at)}
                         </div>
                       </div>
@@ -289,7 +289,7 @@ export default function AdminPanel({ agentRole = 'admin', onBack }) {
                     <div className="flex items-center gap-2 shrink-0">
                       <button
                         onClick={() => setExpandedDoc(isExpanded ? null : doc.id)}
-                        className="p-1.5 text-[#768782] hover:text-[#EDF3F0] rounded-lg transition-colors"
+                        className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg transition-colors hover:bg-slate-200/50"
                         title={isExpanded ? 'Collapse' : 'Expand Content'}
                       >
                         {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -299,7 +299,7 @@ export default function AdminPanel({ agentRole = 'admin', onBack }) {
                         <button
                           onClick={() => handleDelete(doc.id, doc.title)}
                           disabled={deletingId === doc.id}
-                          className="p-1.5 text-[#768782] hover:text-rose-400 rounded-lg transition-colors disabled:opacity-40"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition-colors disabled:opacity-40 hover:bg-rose-50"
                           title="Delete document"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -309,12 +309,12 @@ export default function AdminPanel({ agentRole = 'admin', onBack }) {
                   </div>
 
                   {isExpanded && (
-                    <div className="px-4 pb-4 pt-1 border-t border-[#1A2824] bg-[#0A110F]">
-                      <div className="text-[11px] font-mono text-[#768782] uppercase mb-1.5 flex items-center gap-1.5">
-                        <Eye className="w-3.5 h-3.5 text-[#00E676]" />
+                    <div className="px-4 pb-4 pt-2 border-t border-slate-200 bg-white">
+                      <div className="text-[11px] font-mono text-slate-500 uppercase mb-1.5 flex items-center gap-1.5">
+                        <Eye className="w-3.5 h-3.5 text-emerald-600" />
                         <span>Document Raw Content:</span>
                       </div>
-                      <pre className="text-xs font-mono text-[#C0D0CB] bg-[#070B0A] p-3 rounded-lg border border-[#1A2824] whitespace-pre-wrap max-h-60 overflow-y-auto leading-relaxed">
+                      <pre className="text-xs font-mono text-slate-800 bg-slate-50 p-3 rounded-lg border border-slate-200 whitespace-pre-wrap max-h-60 overflow-y-auto leading-relaxed">
                         {doc.content}
                       </pre>
                     </div>

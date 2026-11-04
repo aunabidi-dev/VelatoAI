@@ -457,7 +457,7 @@ class CallManager:
                 event_type="TRANSCRIPT_REDACTION",
                 details=f"Redacted {count} potential PAN sequence(s) from copilot transcript"
             )
-        return cleaned
+        return cleaned or ""
 
     async def broadcast_call_state(self, call_id: str, payload: Dict[str, Any]):
         """Broadcast state updates to all active websockets in this call room."""

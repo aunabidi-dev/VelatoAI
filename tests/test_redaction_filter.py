@@ -10,7 +10,7 @@ import os
 base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(base_dir, "copilot-app", "backend"))
 
-from app.services.redaction_filter import (
+from app.services.redaction_filter import (  # type: ignore
     redact_transcript,
     is_transcript_clean,
 )
@@ -54,7 +54,7 @@ class TestRedactTranscript:
         assert count == 0
 
     def test_none_input(self):
-        redacted, count = redact_transcript(None)
+        redacted, count = redact_transcript(None)  # type: ignore
         assert redacted is None
         assert count == 0
 

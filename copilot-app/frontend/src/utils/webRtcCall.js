@@ -35,7 +35,7 @@ export class WebRtcCallSession {
 
     // Direct browser mesh channel for immediate peer discovery
     if (typeof window !== 'undefined' && window.BroadcastChannel) {
-      this.channel = new BroadcastChannel('zytasafe_call_mesh');
+      this.channel = new BroadcastChannel('velatoai_call_mesh');
       this.channel.onmessage = (event) => {
         const msg = event.data;
         if (!msg) return;
@@ -390,7 +390,7 @@ export class WebRtcCallSession {
     // 1. Post to BroadcastChannel for 0ms cross-window transmission
     try {
       if (typeof window !== 'undefined' && window.BroadcastChannel) {
-        const ch = new BroadcastChannel('zytasafe_call_mesh');
+        const ch = new BroadcastChannel('velatoai_call_mesh');
         ch.postMessage(data);
         ch.close();
       }

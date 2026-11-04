@@ -1,5 +1,5 @@
 """
-Copilot App - Control Plane API — Phase 3: Live Copilot
+Copilot App - Control Plane API - Phase 3: Live Copilot
 Manages Agent Desktop, Customer signaling, Live Copilot, Audit Trail, and Safe Mode routing.
 
 Phase 2 additions:
@@ -52,7 +52,7 @@ install_log_redaction("fastapi")
 logger = logging.getLogger("copilot-app")
 
 app = FastAPI(
-    title="Zero-Trust PCI Voice Intercept - Control Plane",
+    title="VelatoAI - Autonomous Voice Payment Handover & PCI Isolation",
     description="Control Plane managing Agent Desktop, Live Copilot, and PCI Isolation (Phase 3 Copilot)",
     version="3.0.0"
 )
@@ -66,18 +66,18 @@ app.add_middleware(
 )
 
 
-# ── Role helper ────────────────────────────────────────────────────────────────
+# â”€â”€ Role helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-def _require_admin(x_agent_role: Optional[str]):
+def _require_admin(x_agent_role: Optional[str], action: str = "document management"):
     """Raise 403 if the caller is not an admin."""
     if (x_agent_role or "agent").lower() != "admin":
         raise HTTPException(
             status_code=403,
-            detail="FORBIDDEN: Admin role required for document management."
+            detail=f"FORBIDDEN: Admin role required for {action}."
         )
 
 
-# ── Health ─────────────────────────────────────────────────────────────────────
+# â”€â”€ Health â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.get("/health")
 def health():
@@ -96,7 +96,7 @@ def health():
     }
 
 
-# ── Call management ────────────────────────────────────────────────────────────
+# â”€â”€ Call management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.post("/api/calls")
 def create_call(req: Optional[CallSessionCreate] = None):
@@ -205,7 +205,7 @@ async def reset_call_endpoint(call_id: str):
     return {"call_id": call_id, "status": "RESET", "safe_mode_active": False}
 
 
-# ── Phase 3: Document Management (admin-only) ──────────────────────────────────
+# â”€â”€ Phase 3: Document Management (admin-only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.post("/api/documents", status_code=201)
 def upload_document(
@@ -257,7 +257,7 @@ def delete_document(
     )
 
 
-# ── Phase 3: Live Transcript Ingestion ────────────────────────────────────────
+# â”€â”€ Phase 3: Live Transcript Ingestion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.post("/api/copilot/transcript")
 async def ingest_transcript_chunk(req: TranscriptChunk):
@@ -316,7 +316,7 @@ async def ingest_transcript_chunk(req: TranscriptChunk):
     return result
 
 
-# ── Phase 3: Copilot Suggestion (direct query) ────────────────────────────────
+# â”€â”€ Phase 3: Copilot Suggestion (direct query) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.post("/api/copilot/suggest")
 def get_copilot_suggestion(req: CopilotSuggestionRequest):
@@ -353,7 +353,7 @@ def get_copilot_suggestion(req: CopilotSuggestionRequest):
     return result
 
 
-# ── Audit ──────────────────────────────────────────────────────────────────────
+# â”€â”€ Audit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 _leak_scan_cache = {"report": None, "time": 0}
 
@@ -365,11 +365,14 @@ def get_audit_trail(call_id: Optional[str] = None, limit: Optional[int] = 100):
 
 
 @app.get("/api/audit/leak-scan")
-def run_leak_scan():
+def run_leak_scan(x_agent_role: Optional[str] = Header(default=None)):
+    """Run memory and database leak scan. Requires admin role if role is specified."""
+    if x_agent_role is not None:
+        _require_admin(x_agent_role, "running leak scans")
     return audit_service.scan_for_card_leaks()
 
 
-# ── Phase 4: Cryptographic Audit & Latency Telemetry ──────────────────────────
+# ── Phase 4: Cryptographic Audit & Latency Telemetry ─────────────────────────
 
 @app.get("/api/audit/verify")
 def verify_audit_trail():
@@ -378,8 +381,10 @@ def verify_audit_trail():
 
 
 @app.get("/api/audit/export")
-def export_audit_trail(format: str = "json"):
-    """Phase 4: Exports verifiable audit trail with cryptographic signatures."""
+def export_audit_trail(format: str = "json", x_agent_role: Optional[str] = Header(default=None)):
+    """Phase 4: Exports verifiable audit trail with cryptographic signatures. Requires admin role if specified."""
+    if x_agent_role is not None:
+        _require_admin(x_agent_role, "exporting audit logs")
     return audit_service.export_audit_log(format_type=format)
 
 
@@ -416,9 +421,9 @@ def get_latency_telemetry():
     }
 
 
-# ── Phase 2: Recording timeline ───────────────────────────────────────────────
+# â”€â”€ Phase 2: Recording timeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-# ── Dedicated Meta Reviewer Inspection Endpoints ──────────────────────────────
+# â”€â”€ Dedicated Meta Reviewer Inspection Endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.get("/api/meta-reviewer/summary")
 def meta_reviewer_summary():
@@ -434,9 +439,9 @@ def meta_reviewer_summary():
     
     return {
         "hackathon_metadata": {
-            "project": "ZytaSafe — Zero-Trust PCI Voice Intercept & Live Support Copilot",
+            "project": "VelatoAI — Autonomous Voice Payment Handover & PCI Isolation",
             "hackathon": "Meta Global AI Developer Hackathon",
-            "track": "Startup Track · Theme: Build for Your World",
+            "track": "Startup Track Â· Theme: Build for Your World",
             "primary_model": "meta-models/muse-spark-open-1026",
             "model_provider": "Baseten Inference API (OpenAI Compatible)",
             "reasoning_effort": "low",
@@ -502,7 +507,7 @@ def get_recording_timeline(call_id: str):
     return rec.get_timeline()
 
 
-# ── WebSocket ─────────────────────────────────────────────────────────────────
+# â”€â”€ WebSocket â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.websocket("/ws/call/{call_id}/{role}")
 async def call_websocket(websocket: WebSocket, call_id: str, role: str):
@@ -605,7 +610,7 @@ async def call_websocket(websocket: WebSocket, call_id: str, role: str):
             elif msg_type in ["TRANSCRIPT_CHUNK", "CALL_SPEECH"]:
                 # Phase 2 + Phase 3: Redact transcript and generate suggestion
                 if call.copilot_blackout:
-                    # During Safe Mode — send blackout notice to agent only
+                    # During Safe Mode - send blackout notice to agent only
                     await websocket.send_json({
                         "type": "COPILOT_SUGGESTION",
                         "call_id": call_id,
@@ -665,3 +670,63 @@ async def call_websocket(websocket: WebSocket, call_id: str, role: str):
     finally:
         if call and role in call.connections:
             call.connections[role].discard(websocket)
+# ── Meta MMS TTS Endpoint ──────────────────────────────────────────────────
+import io as _io
+
+class TTSRequest(BaseModel):
+    text: str
+    session_id: str = ""
+
+@app.post("/api/tts/speak")
+async def tts_speak(req: TTSRequest):
+    """
+    Converts text to speech using Meta's MMS-TTS model (facebook/mms-tts-eng).
+    Falls back gracefully - returns 503 if model not available so frontend
+    can switch to browser Web Speech API (the documented fallback).
+    Per product spec §6 & §14: Meta MMS TTS is primary, browser voice is fallback.
+    """
+    if not req.text or not req.text.strip():
+        raise HTTPException(status_code=400, detail="text is required")
+
+    try:
+        from transformers import pipeline as hf_pipeline
+        import torch
+        import soundfile as sf
+        import numpy as np
+
+        tts = hf_pipeline(
+            "text-to-speech",
+            model="facebook/mms-tts-eng",
+            device=-1  # CPU
+        )
+        result = tts(req.text.strip())
+        audio_array = np.array(result["audio"])
+        if audio_array.ndim == 2:
+            audio_array = audio_array[0]
+        sampling_rate = result.get("sampling_rate", 16000)
+
+        buf = _io.BytesIO()
+        sf.write(buf, audio_array, sampling_rate, format="WAV")
+        buf.seek(0)
+
+        from fastapi.responses import Response
+        return Response(
+            content=buf.read(),
+            media_type="audio/wav",
+            headers={
+                "X-TTS-Engine": "Meta MMS TTS (facebook/mms-tts-eng)",
+                "X-Sampling-Rate": str(sampling_rate),
+            }
+        )
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "mms_unavailable", "fallback": "browser_tts",
+                    "message": "Meta MMS TTS model not loaded. Use browser Web Speech API fallback."}
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "mms_unavailable", "fallback": "browser_tts",
+                    "message": f"TTS inference error: {str(e)}"}
+        )

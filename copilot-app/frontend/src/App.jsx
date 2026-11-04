@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  LayoutDashboard, Users, Phone, BarChart3, Settings,
+  LayoutDashboard, Users, Phone, BarChart3,
   Shield, Activity, BookOpen, ShieldCheck, RefreshCw, X, ChevronDown,
   User, Sparkles, Volume2, MicOff, Server, Zap, CheckCircle2,
-  ExternalLink, PhoneCall, Terminal
+  ExternalLink, PhoneCall, Terminal, Headphones, Lock, AlertCircle
 } from 'lucide-react';
 import logoImg from './assets/logo.png';
 import AgentDesktop from './components/AgentDesktop';
@@ -21,6 +21,7 @@ export default function App() {
 
   const [viewMode, setViewMode] = useState('live'); // 'live', 'customer', 'knowledge', 'proof', 'reviewer'
   const [agentRole, setAgentRole] = useState('admin'); // 'agent' | 'admin'
+  const [roleToast, setRoleToast] = useState(null);
   const [sidebarActive, setSidebarActive] = useState('dashboard'); // 'dashboard', 'knowledge', 'audit', 'reviewer'
   const [isCustomerDrawerOpen, setIsCustomerDrawerOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -85,17 +86,17 @@ export default function App() {
   const broadcastCallEvent = (payload) => {
     try {
       if (typeof window !== 'undefined' && window.BroadcastChannel) {
-        const ch = new BroadcastChannel('zytasafe_call_mesh');
+        const ch = new BroadcastChannel('velatoai_call_mesh');
         ch.postMessage(payload);
         ch.close();
       }
-    } catch (e) {}
+    } catch (e) { }
   };
 
   // Inter-window real-time signaling mesh
   useEffect(() => {
     if (typeof window === 'undefined' || !window.BroadcastChannel) return;
-    const channel = new BroadcastChannel('zytasafe_call_mesh');
+    const channel = new BroadcastChannel('velatoai_call_mesh');
 
     channel.onmessage = (event) => {
       const msg = event.data;
@@ -185,7 +186,7 @@ export default function App() {
         ws.onopen = () => {
           if (!isMounted) return;
           setWsConnected(true);
-          console.log(`[ZytaSafe WS] Signal Mesh connected as ${role}`);
+          console.log(`[VelatoAI WS] Signal Mesh connected as ${role}`);
 
           // Keep connection alive through any reverse-proxy / NAT timeout
           if (pingInterval) clearInterval(pingInterval);
@@ -234,7 +235,7 @@ export default function App() {
               }
             } else if (msg.type === 'INCOMING_CALL' || msg.type === 'CALL_RINGING' || msg.type === 'CALL_INITIATE') {
               if (role === 'agent') {
-                console.log('[ZytaSafe WS] Incoming call event received on agent desk:', msg);
+                console.log('[VelatoAI WS] Incoming call event received on agent desk:', msg);
                 setIncomingCall({
                   caller_name: msg.customer_name || msg.caller_name || 'Jane Doe',
                   phone: msg.phone || '+1-555-0192',
@@ -325,17 +326,17 @@ export default function App() {
           if (pingInterval) clearInterval(pingInterval);
           if (!isMounted) return;
           setWsConnected(false);
-          console.log(`[ZytaSafe WS] Signal disconnected. Auto-reconnecting in 1s...`);
+          console.log(`[VelatoAI WS] Signal disconnected. Auto-reconnecting in 1s...`);
           clearTimeout(reconnectTimeout);
           reconnectTimeout = setTimeout(connect, 1000);
         };
 
         ws.onerror = (err) => {
-          console.warn('[ZytaSafe WS] Socket error, reconnecting...', err);
+          console.warn('[VelatoAI WS] Socket error, reconnecting...', err);
           if (ws) ws.close();
         };
       } catch (e) {
-        console.warn('[ZytaSafe WS] Connection init error, retrying in 1.5s', e);
+        console.warn('[VelatoAI WS] Connection init error, retrying in 1.5s', e);
         clearTimeout(reconnectTimeout);
         reconnectTimeout = setTimeout(connect, 1500);
       }
@@ -388,7 +389,7 @@ export default function App() {
             }
           }
         }
-      } catch (err) {}
+      } catch (err) { }
     }, 4000);
 
     return () => {
@@ -443,8 +444,8 @@ export default function App() {
   // Agent cancels PCI Safe Mode
   const handleCancelSafeMode = async () => {
     try {
-      await fetch(`/api/calls/${callState.call_id}/safe-mode/cancel`, {
-        method: 'POST'
+      await fetch("/api/calls/" + callState.call_id + "/safe-mode/cancel", {
+        method: "POST"
       });
     } catch (e) { }
     setCallState(prev => ({
@@ -459,8 +460,8 @@ export default function App() {
     }
     setPaymentSession({
       session_id: null,
-      state: 'IDLE',
-      prompt: '',
+      state: "IDLE",
+      prompt: "",
       brand: null,
       last4: null,
       expiry: null
@@ -468,37 +469,79 @@ export default function App() {
     fetchAudit();
   };
 
+  // Safe Mode Abort / Agent Transfer Handback
+  const handleTransferToAgent = async (prompt, reason = "customer_transfer") => {
+    // 1. Play the AI transfer prompt to customer before releasing
+    setPaymentSession({
+      session_id: null,
+      state: "IDLE",
+      prompt: prompt || "Reconnecting you with your agent Alice...",
+      brand: null,
+      last4: null,
+      expiry: null
+    });
+
+    // 2. Re-establish agent and customer audio on control plane
+    try {
+      await fetch("/api/calls/" + callState.call_id + "/safe-mode/cancel", {
+        method: "POST"
+      });
+    } catch (e) {
+      console.warn("Error cancelling safe mode on transfer:", e);
+    }
+
+    setCallState(prev => ({
+      ...prev,
+      agent_isolated: false,
+      safe_mode_active: false,
+      recording_paused_pci: false
+    }));
+    setCopilotBlackout(false);
+
+    if (webRtcSessionRef.current) {
+      webRtcSessionRef.current.restoreAudioAfterSafeMode();
+    }
+
+    setCopilotSuggestion("PCI Safe Mode ended. Automated card verification could not be completed (" + reason + "). Customer Jane Doe is reconnected with you.");
+    fetchAudit();
+  };
+
   // 2. Customer speaks PAN
   const handleSendPan = async (panText) => {
-    const rawDigits = panText.replace(/\D/g, '');
-    const fallbackLast4 = rawDigits.length >= 4 ? rawDigits.slice(-4) : (rawDigits || '0987');
-
     try {
-      const res = await fetch(`/api/payment/session/${paymentSession.session_id}/pan`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/payment/session/" + paymentSession.session_id + "/pan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ spoken_text: panText })
       });
       const data = await res.json();
+
+      if (data.aborted || data.action === "TRANSFER_TO_AGENT") {
+        handleTransferToAgent(data.prompt, data.reason || "Verification attempts exceeded");
+        return;
+      }
+
       if (data.valid === false) {
-        setPaymentSession(prev => ({ ...prev, prompt: data.prompt }));
-      } else {
-        const last4 = data.last4 || fallbackLast4;
         setPaymentSession(prev => ({
           ...prev,
-          state: 'CAPTURING_EXPIRY',
-          prompt: data.prompt || `Card verified: ${data.brand || 'Visa'} ending in ${last4}. Please state your expiration month and year, for example 12 28.`,
-          brand: data.brand || 'Visa',
-          last4: last4
+          state: "CAPTURING_PAN",
+          prompt: data.prompt
         }));
+        return;
       }
+
+      setPaymentSession(prev => ({
+        ...prev,
+        state: "CAPTURING_EXPIRY",
+        prompt: data.prompt || ("Card verified: " + (data.brand || "Visa") + " ending in " + (data.last4 || "----") + ". Please state your expiration month and year, for example 12 28."),
+        brand: data.brand || "Visa",
+        last4: data.last4 || "----"
+      }));
     } catch (e) {
       setPaymentSession(prev => ({
         ...prev,
-        state: 'CAPTURING_EXPIRY',
-        prompt: `Card verified: Visa ending in ${fallbackLast4}. Please state your expiration month and year, for example 12 28.`,
-        brand: 'Visa',
-        last4: fallbackLast4
+        state: "CAPTURING_PAN",
+        prompt: "Unable to reach the payment service. Please wait a moment and try speaking your card number again.",
       }));
     }
   };
@@ -506,31 +549,38 @@ export default function App() {
   // 3. Customer speaks Expiry
   const handleSendExpiry = async (expText) => {
     try {
-      const res = await fetch(`/api/payment/session/${paymentSession.session_id}/expiry`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/payment/session/" + paymentSession.session_id + "/expiry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ spoken_text: expText })
       });
       const data = await res.json();
+
+      if (data.aborted || data.action === "TRANSFER_TO_AGENT") {
+        handleTransferToAgent(data.prompt, data.reason || "Expiry verification failed");
+        return;
+      }
+
       if (data.valid === false) {
         setPaymentSession(prev => ({
           ...prev,
-          prompt: data.prompt || 'Please state the expiration month and year again, for example 12 28.'
+          state: "CAPTURING_EXPIRY",
+          prompt: data.prompt || "Please state the expiration month and year again, for example 12 28."
         }));
         return;
       }
+
       setPaymentSession(prev => ({
         ...prev,
-        state: 'CAPTURING_CVV',
-        expiry: expText.trim(),
-        prompt: data.prompt || 'Please say the 3-digit security code on the back of your card.'
+        state: "CAPTURING_CVV",
+        expiry: data.expiry || expText.trim(),
+        prompt: data.prompt || "Please say the 3-digit security code on the back of your card."
       }));
     } catch (e) {
       setPaymentSession(prev => ({
         ...prev,
-        state: 'CAPTURING_CVV',
-        expiry: expText.trim(),
-        prompt: 'Please say the 3-digit security code on the back of your card.'
+        state: "CAPTURING_EXPIRY",
+        prompt: "Payment service connection error. Please repeat the expiration month and year, for example 12 28.",
       }));
     }
   };
@@ -538,22 +588,30 @@ export default function App() {
   // 4. Customer speaks CVV
   const handleSendCvv = async (cvvText) => {
     try {
-      const res = await fetch(`/api/payment/session/${paymentSession.session_id}/cvv`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/payment/session/" + paymentSession.session_id + "/cvv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ spoken_text: cvvText })
       });
       const data = await res.json();
+
+      if (data.aborted || data.action === "TRANSFER_TO_AGENT") {
+        handleTransferToAgent(data.prompt, data.reason || "CVV verification failed");
+        return;
+      }
+
       if (data.valid === false) {
         setPaymentSession(prev => ({
           ...prev,
-          prompt: data.prompt || 'Please repeat the 3 or 4-digit security code on your card.'
+          state: "CAPTURING_CVV",
+          prompt: data.prompt || "Please repeat the 3 or 4-digit security code on your card."
         }));
         return;
       }
+
       setPaymentSession(prev => ({
         ...prev,
-        state: 'CONFIRMING',
+        state: "CONFIRMING",
         prompt: data.prompt,
         last4: data.last4 || prev.last4,
         expiry: data.expiry || prev.expiry
@@ -561,10 +619,8 @@ export default function App() {
     } catch (e) {
       setPaymentSession(prev => ({
         ...prev,
-        state: 'CONFIRMING',
-        prompt: `I have recorded a ${prev.brand || 'card'} ending in ${prev.last4}, expiring ${prev.expiry}. Is this correct? Say yes to confirm.`,
-        last4: prev.last4,
-        expiry: prev.expiry
+        state: "CAPTURING_CVV",
+        prompt: "Payment service connection error. Please say the 3-digit security code on your card again.",
       }));
     }
   };
@@ -617,21 +673,11 @@ export default function App() {
       setPaymentSession(prev => ({ ...prev, state: 'COMPLETED' }));
       fetchAudit();
     } catch (e) {
-      const token = `tok_pci_${Math.random().toString(16).substring(2, 10)}`;
-      const last4 = paymentSession.last4;
-      const brand = paymentSession.brand || 'Card';
-      setPaymentResult({ token, brand, last4 });
-      setCallState(prev => ({
+      setPaymentSession(prev => ({
         ...prev,
-        agent_isolated: false,
-        safe_mode_active: false,
-        recording_paused_pci: false
+        state: 'CONFIRMING',
+        prompt: 'Payment tokenization service was unreachable. Please say "yes" to retry, or "no" to restart.'
       }));
-      setCopilotBlackout(false);
-      if (webRtcSessionRef.current) {
-        webRtcSessionRef.current.restoreAudioAfterSafeMode();
-      }
-      setPaymentSession(prev => ({ ...prev, state: 'COMPLETED' }));
     }
   };
 
@@ -667,7 +713,7 @@ export default function App() {
 
     try {
       await fetch(`/api/calls/${callState.call_id}/accept`, { method: 'POST' });
-    } catch (e) {}
+    } catch (e) { }
 
     if (webRtcSessionRef.current) {
       webRtcSessionRef.current.acceptCall();
@@ -688,7 +734,7 @@ export default function App() {
 
     try {
       await fetch(`/api/calls/${callState.call_id}/decline`, { method: 'POST' });
-    } catch (e) {}
+    } catch (e) { }
 
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -717,7 +763,7 @@ export default function App() {
 
     try {
       await fetch(`/api/calls/${callState.call_id}/hangup`, { method: 'POST' });
-    } catch (e) {}
+    } catch (e) { }
 
     if (webRtcSessionRef.current) {
       webRtcSessionRef.current.hangup(false);
@@ -832,10 +878,29 @@ export default function App() {
     fetchAudit();
   };
 
+  const handleToggleRole = (newRole) => {
+    const nextRole = newRole || (agentRole === 'admin' ? 'agent' : 'admin');
+    setAgentRole(nextRole);
+    if (nextRole === 'admin') {
+      setRoleToast({
+        type: 'admin',
+        title: 'Switched to Administrator Role',
+        desc: 'Full administrative access: Forensic leak scans, cryptographic audit log exports, and knowledge uploads unlocked.'
+      });
+    } else {
+      setRoleToast({
+        type: 'agent',
+        title: 'Switched to Support Agent Role',
+        desc: 'Strict RBAC active: Knowledge base is read-only. Forensic leak scans and cryptographic audit exports are locked.'
+      });
+    }
+    setTimeout(() => setRoleToast(null), 4500);
+  };
+
   // ── STANDALONE CUSTOMER CALLER MODE (When opened in a 2nd browser window) ──
   if (isCustomerStandalone) {
     return (
-      <div className="min-h-screen bg-[#070B0A] text-[#EDF3F0] flex flex-col items-center justify-center p-4 selection:bg-[#00E676] selection:text-[#070B0A]">
+      <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col items-center justify-center p-4 selection:bg-emerald-100 selection:text-emerald-900">
         <CustomerPhone
           isCustomerWindow={true}
           safeModeActive={callState.safe_mode_active}
@@ -857,37 +922,36 @@ export default function App() {
 
   // ── CRM AGENT / ADMIN DESKTOP WORKSPACE ─────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#070B0A] text-[#EDF3F0] flex flex-row font-sans selection:bg-[#00E676] selection:text-[#070B0A]">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-row font-sans selection:bg-emerald-100 selection:text-emerald-900">
       {/* ── Left Sidebar Navigation (Dedicated Enterprise Nav) ───────── */}
-      <aside className="w-60 shrink-0 border-r border-[#1A2824] bg-[#0A110F] flex flex-col justify-between p-4 min-h-screen sticky top-0 h-screen overflow-y-auto z-20">
+      <aside className="w-60 shrink-0 border-r border-slate-200 bg-white flex flex-col justify-between p-4 min-h-screen sticky top-0 h-screen overflow-y-auto z-20">
         <div className="flex flex-col gap-6">
           {/* Logo & Brand Title */}
           <div
             className="flex items-center gap-3 px-2 pt-2 cursor-pointer"
             onClick={() => { setSidebarActive('dashboard'); setViewMode('live'); }}
           >
-            <img src={logoImg} alt="ZytaSafe" className="w-8 h-8 rounded-lg object-contain" />
+            <img src={logoImg} alt="VelatoAI" className="w-8 h-8 rounded-lg object-contain shadow-xs" />
             <div>
-              <span className="font-bold text-base tracking-tight text-white block">ZytaSafe</span>
-              <span className="text-[10px] text-[#768782] font-mono">Zero-Trust Voice Intercept</span>
+              <span className="font-bold text-base tracking-tight text-slate-900 block">VelatoAI</span>
+              <span className="text-[11px] text-slate-500 font-medium">Autonomous Voice Payment Handover</span>
             </div>
           </div>
 
           {/* Functional Navigation Items */}
-          <nav className="flex flex-col gap-1.5">
+          <nav className="flex flex-col gap-1">
             <button
               onClick={() => {
                 setSidebarActive('dashboard');
                 setViewMode('live');
               }}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                sidebarActive === 'dashboard'
-                  ? 'bg-[#0B2A1E] border border-[#165038] text-[#00E676] shadow-sm'
-                  : 'text-[#768782] hover:text-[#EDF3F0] hover:bg-[#111C19]'
-              }`}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${sidebarActive === 'dashboard'
+                ? 'bg-slate-100 text-slate-900 border border-slate-200/70 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
             >
-              <PhoneCall className="w-4 h-4" />
-              <span>Live CRM Call</span>
+              <PhoneCall className={`w-4 h-4 ${sidebarActive === 'dashboard' ? 'text-emerald-600' : 'text-slate-400'}`} />
+              <span>Live CRM call</span>
             </button>
 
             <button
@@ -895,14 +959,18 @@ export default function App() {
                 setSidebarActive('knowledge');
                 setViewMode('knowledge');
               }}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                sidebarActive === 'knowledge'
-                  ? 'bg-[#0B2A1E] border border-[#165038] text-[#00E676] shadow-sm'
-                  : 'text-[#768782] hover:text-[#EDF3F0] hover:bg-[#111C19]'
-              }`}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${sidebarActive === 'knowledge'
+                ? 'bg-slate-100 text-slate-900 border border-slate-200/70 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
             >
-              <BookOpen className="w-4 h-4" />
-              <span>Knowledge Base</span>
+              <div className="flex items-center gap-3">
+                <BookOpen className={`w-4 h-4 ${sidebarActive === 'knowledge' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                <span>Knowledge base</span>
+              </div>
+              {agentRole !== 'admin' && (
+                <span className="text-[10px] font-mono text-slate-400 px-1.5 py-0.2 bg-slate-100 rounded border border-slate-200">Read</span>
+              )}
             </button>
 
             <button
@@ -910,14 +978,18 @@ export default function App() {
                 setSidebarActive('audit');
                 setViewMode('proof');
               }}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                sidebarActive === 'audit'
-                  ? 'bg-[#0B2A1E] border border-[#165038] text-[#00E676] shadow-sm'
-                  : 'text-[#768782] hover:text-[#EDF3F0] hover:bg-[#111C19]'
-              }`}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${sidebarActive === 'audit'
+                ? 'bg-slate-100 text-slate-900 border border-slate-200/70 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
             >
-              <ShieldCheck className="w-4 h-4" />
-              <span>Security Audit</span>
+              <div className="flex items-center gap-3">
+                <ShieldCheck className={`w-4 h-4 ${sidebarActive === 'audit' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                <span>Security audit</span>
+              </div>
+              {agentRole !== 'admin' && (
+                <Lock className="w-3 h-3 text-slate-400" />
+              )}
             </button>
 
             <button
@@ -925,199 +997,236 @@ export default function App() {
                 setSidebarActive('reviewer');
                 setViewMode('reviewer');
               }}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                sidebarActive === 'reviewer'
-                  ? 'bg-[#0B2A1E] border border-[#165038] text-[#00E676] shadow-sm'
-                  : 'text-[#768782] hover:text-[#EDF3F0] hover:bg-[#111C19]'
-              }`}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${sidebarActive === 'reviewer'
+                ? 'bg-slate-100 text-slate-900 border border-slate-200/70 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
             >
-              <Terminal className="w-4 h-4 text-[#00E676]" />
-              <span>Meta Reviewer Portal</span>
+              <Terminal className={`w-4 h-4 ${sidebarActive === 'reviewer' ? 'text-emerald-600' : 'text-slate-400'}`} />
+              <span>Reviewer portal</span>
             </button>
           </nav>
         </div>
 
         {/* Bottom Sidebar Widgets: System Online & User Profile */}
-        <div className="flex flex-col gap-3 pt-4 border-t border-[#1A2824]">
+        <div className="flex flex-col gap-2.5 pt-4 border-t border-slate-200">
           {/* System Online Status Card */}
-          <div className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-3 flex items-center justify-between">
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <span className="w-2 h-2 rounded-full bg-[#00E676] animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
               <div>
-                <div className="text-xs font-bold text-[#EDF3F0]">System Online</div>
-                <div className="text-[10px] text-[#768782]">All systems operational</div>
+                <div className="text-xs font-semibold text-slate-900">System online</div>
+                <div className="text-[11px] text-slate-500">All services operational</div>
               </div>
             </div>
-            <svg className="w-10 h-5 text-[#00E676] opacity-90" viewBox="0 0 48 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M0 12h12l3-8 6 16 4-10 3 4h20" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <Activity className="w-4 h-4 text-emerald-600" />
           </div>
 
           {/* User Profile */}
           <div
             onClick={() => setIsProfileModalOpen(true)}
-            className="flex items-center justify-between p-2 rounded-xl bg-[#0E1614] border border-[#1A2824] cursor-pointer hover:border-[#165038] transition-colors"
-            title="Click to view User Profile"
+            className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100 hover:border-slate-300 transition-colors"
+            title="Click to view operator profile and RBAC clearance"
           >
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-[#131E1B] border border-[#165038] flex items-center justify-center text-xs font-bold text-[#00E676]">
-                SA
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                agentRole === 'admin'
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  : 'bg-blue-100 text-blue-800 border border-blue-200'
+              }`}>
+                {agentRole === 'admin' ? 'AD' : 'SA'}
               </div>
               <div className="min-w-0">
-                <div className="text-xs font-semibold text-[#EDF3F0] truncate">Syed Asher Imtiaz</div>
-                <div className="text-[10px] text-[#768782] capitalize font-mono">
-                  Role: <span className="text-[#00E676]">{agentRole}</span>
+                <div className="text-xs font-semibold text-slate-900 truncate">Syed Asher Imtiaz</div>
+                <div className="text-[11px] text-slate-500 capitalize flex items-center gap-1">
+                  <span>{agentRole === 'admin' ? 'Administrator' : 'Support Agent'}</span>
+                  <span className="text-[9px] font-mono text-slate-400">
+                    ({agentRole === 'admin' ? 'Master' : 'Restricted'})
+                  </span>
                 </div>
               </div>
             </div>
 
-            <ChevronDown className="w-3.5 h-3.5 text-[#768782]" />
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
           </div>
         </div>
       </aside>
 
       {/* ── Main Workspace ───────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-h-screen px-6 py-4 overflow-y-auto relative">
-        {/* Top Header Bar: Telemetry, Quick Role Toggle, & Launch Customer Window */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-[#1A2824]">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="bg-[#0B2017] border border-[#154530] text-[#00E676] px-3 py-1 rounded-full text-xs font-medium flex items-center gap-2 shadow-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#00E676]" />
-              <span>Built with Muse Spark Open (Baseten)</span>
-            </div>
-            <div className={`px-2.5 py-0.5 rounded-full text-[11px] font-mono border flex items-center gap-1.5 ${
-              wsConnected ? 'bg-[#0E1614] text-[#34D399] border-[#165038]' : 'bg-[#1C1417] text-rose-400 border-rose-500/30'
-            }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-[#34D399] animate-pulse' : 'bg-rose-500'}`} />
-              <span>{wsConnected ? 'Signal Mesh Live' : 'Signal Mesh Reconnecting'}</span>
+        {/* Top Header Bar: Status & Launch Customer Window */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-200">
+          <div className="flex items-center gap-2.5">
+            <div className={`px-2.5 py-1 rounded-full text-xs font-medium border flex items-center gap-1.5 ${wsConnected ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-800 border-rose-200'
+              }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+              <span>{wsConnected ? 'Control plane connected' : 'Control plane reconnecting'}</span>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* Quick Role Switcher (Admin vs Agent) */}
-            <div className="flex items-center gap-1 bg-[#0E1614] border border-[#1A2824] p-1 rounded-xl">
-              <span className="text-[10px] font-mono text-[#768782] px-2 uppercase">Role:</span>
+            {/* Interactive Agent <-> Admin Role Switcher Toggle */}
+            <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 shadow-2xs">
               <button
-                onClick={() => setAgentRole('agent')}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                onClick={() => handleToggleRole('agent')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   agentRole === 'agent'
-                    ? 'bg-[#0B2A1E] text-[#00E676] border border-[#165038]'
-                    : 'text-[#768782] hover:text-[#EDF3F0]'
+                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200/90'
+                    : 'text-slate-500 hover:text-slate-800'
                 }`}
-                title="Agent: Read-only access to docs, answers live calls"
+                title="Switch to Support Agent (Strict RBAC: Read-Only Knowledge, Locked Audit Export)"
               >
-                <User className="w-3.5 h-3.5" />
+                <Headphones className={`w-3.5 h-3.5 ${agentRole === 'agent' ? 'text-blue-600' : 'text-slate-400'}`} />
                 <span>Agent</span>
+                {agentRole === 'agent' && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 ml-0.5" />
+                )}
               </button>
+
               <button
-                onClick={() => setAgentRole('admin')}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                onClick={() => handleToggleRole('admin')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   agentRole === 'admin'
-                    ? 'bg-[#0B2A1E] text-[#00E676] border border-[#165038]'
-                    : 'text-[#768782] hover:text-[#EDF3F0]'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
                 }`}
-                title="Admin: Full upload, delete, and audit privileges"
+                title="Switch to Administrator (Full Access: Leak Scans, Cryptographic Exports, Knowledge Uploads)"
               >
-                <Shield className="w-3.5 h-3.5" />
+                <ShieldCheck className={`w-3.5 h-3.5 ${agentRole === 'admin' ? 'text-emerald-400' : 'text-slate-400'}`} />
                 <span>Admin</span>
+                {agentRole === 'admin' && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 ml-0.5" />
+                )}
               </button>
+            </div>
+
+            {/* Clearance Pill */}
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono bg-white border-slate-200">
+              <span className="text-slate-400 text-[10px] uppercase">Clearance:</span>
+              <span className={`font-bold ${agentRole === 'admin' ? 'text-emerald-700' : 'text-blue-700'}`}>
+                {agentRole === 'admin' ? 'Master Admin' : 'Agent Restricted'}
+              </span>
             </div>
 
             {/* Launch Customer Window (Side-by-Side Browser Calling) */}
             <button
-              onClick={() => window.open('/?mode=customer', 'ZytaSafe Customer Caller', 'width=460,height=820')}
-              className="flex items-center gap-2 bg-[#0B261B] hover:bg-[#123829] border border-[#165038] text-[#00E676] px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all shadow-sm"
-              title="Open standalone Customer Caller in a separate window to test 2-window calling"
+              onClick={() => window.open('/?mode=customer', 'VelatoAI Customer Caller', 'width=460,height=820')}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 hover:text-slate-900 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all shadow-xs"
+              title="Open standalone customer caller in a separate window"
             >
-              <Phone className="w-3.5 h-3.5" />
-              <span>Launch Customer Window</span>
-              <ExternalLink className="w-3 h-3 text-[#768782]" />
+              <Phone className="w-3.5 h-3.5 text-slate-500" />
+              <span>Launch customer window</span>
+              <ExternalLink className="w-3 h-3 text-slate-400" />
             </button>
           </div>
         </div>
 
+        {/* Dynamic Role Switch Notification Banner */}
+        {roleToast && (
+          <div className="mb-4 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className={`p-3.5 rounded-xl border flex items-center justify-between text-xs shadow-xs ${
+              roleToast.type === 'admin'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                : 'bg-blue-50 border-blue-200 text-blue-950'
+            }`}>
+              <div className="flex items-center gap-2.5">
+                {roleToast.type === 'admin' ? (
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <Lock className="w-4 h-4 text-blue-600 shrink-0" />
+                )}
+                <div>
+                  <span className="font-bold block">{roleToast.title}</span>
+                  <span className="text-[11px] opacity-90">{roleToast.desc}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setRoleToast(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* ── Sub-Nav Header Card ──────────────────────────────────────── */}
-        <header className="bg-[#0E1614] border border-[#1A2824] rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 mb-6 shadow-sm">
+        <header className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 mb-5 shadow-xs">
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-xl bg-[#0B261B] border border-[#165038] flex items-center justify-center p-2 text-[#00E676] shadow-inner">
-              <img src={logoImg} alt="ZytaSafe" className="w-full h-full object-contain" />
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center p-1.5 text-emerald-600">
+              <img src={logoImg} alt="VelatoAI" className="w-full h-full object-contain" />
             </div>
             <div>
-              <h1 className="text-lg font-bold tracking-tight text-white">ZytaSafe</h1>
-              <p className="text-xs text-[#768782]">
-                Zero-Trust PCI Voice Intercept & Live Support Copilot
+              <h1 className="text-base font-bold tracking-tight text-slate-900">VelatoAI Contact Center</h1>
+              <p className="text-xs text-slate-500">
+                Autonomous Voice Payment Handover & PCI Isolation
               </p>
             </div>
           </div>
 
           {/* Sub Navigation Tabs */}
-          <div className="flex flex-wrap items-center gap-1.5 bg-[#070B0A] p-1 rounded-xl border border-[#1A2824] text-xs font-medium">
+          <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-medium">
             <button
               onClick={() => { setSidebarActive('dashboard'); setViewMode('live'); }}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg transition-all ${
-                viewMode === 'live'
-                  ? 'bg-[#0B2A1E] border border-[#165038] text-[#00E676] font-semibold shadow-sm'
-                  : 'text-[#768782] hover:text-[#EDF3F0]'
-              }`}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-all ${viewMode === 'live'
+                ? 'bg-white text-slate-900 font-semibold shadow-xs border border-slate-200/80'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                }`}
             >
-              <Activity className="w-3.5 h-3.5" />
-              <span>Live Call</span>
+              <Activity className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Live call</span>
             </button>
 
             <button
               onClick={() => setIsCustomerDrawerOpen(prev => !prev)}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg transition-all ${
-                isCustomerDrawerOpen
-                  ? 'bg-[#0B2A1E] border border-[#165038] text-[#00E676] font-semibold shadow-sm'
-                  : 'text-[#768782] hover:text-[#EDF3F0]'
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all ${isCustomerDrawerOpen
+                ? 'bg-white text-slate-900 font-semibold shadow-xs border border-slate-200/80'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                }`}
             >
-              <Phone className="w-3.5 h-3.5" />
-              <span>Customer Phone</span>
+              <Phone className="w-3.5 h-3.5 text-slate-500" />
+              <span>Customer phone</span>
             </button>
 
             <button
               onClick={() => { setSidebarActive('knowledge'); setViewMode('knowledge'); }}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg transition-all ${
-                viewMode === 'knowledge'
-                  ? 'bg-[#0B2A1E] border border-[#165038] text-[#00E676] font-semibold shadow-sm'
-                  : 'text-[#768782] hover:text-[#EDF3F0]'
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all ${viewMode === 'knowledge'
+                ? 'bg-white text-slate-900 font-semibold shadow-xs border border-slate-200/80'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                }`}
             >
-              <BookOpen className="w-3.5 h-3.5" />
-              <span>Knowledge Base</span>
+              <BookOpen className="w-3.5 h-3.5 text-slate-500" />
+              <span>Knowledge base</span>
             </button>
 
             <button
               onClick={() => { setSidebarActive('audit'); setViewMode('proof'); }}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg transition-all ${
-                viewMode === 'proof'
-                  ? 'bg-[#0B2A1E] border border-[#165038] text-[#00E676] font-semibold shadow-sm'
-                  : 'text-[#768782] hover:text-[#EDF3F0]'
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all ${viewMode === 'proof'
+                ? 'bg-white text-slate-900 font-semibold shadow-xs border border-slate-200/80'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                }`}
             >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Security Audit</span>
+              <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
+              <span>Security audit</span>
             </button>
 
             <button
               onClick={() => { setSidebarActive('reviewer'); setViewMode('reviewer'); }}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg transition-all ${
-                viewMode === 'reviewer'
-                  ? 'bg-[#0B2A1E] border border-[#165038] text-[#00E676] font-semibold shadow-sm'
-                  : 'text-[#768782] hover:text-[#EDF3F0]'
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all ${viewMode === 'reviewer'
+                ? 'bg-white text-slate-900 font-semibold shadow-xs border border-slate-200/80'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                }`}
             >
-              <Terminal className="w-3.5 h-3.5" />
-              <span>Meta Reviewer</span>
+              <Terminal className="w-3.5 h-3.5 text-slate-500" />
+              <span>Reviewer portal</span>
             </button>
 
             <button
               onClick={handleReset}
-              className="p-1.5 text-[#768782] hover:text-[#00E676] hover:bg-[#111C19] rounded-lg transition-colors ml-1"
-              title="Reset Call & Audit State"
+              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-md transition-colors ml-1"
+              title="Reset call & audit state"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-3.5 h-3.5" />
             </button>
           </div>
         </header>
@@ -1211,27 +1320,27 @@ export default function App() {
 
       {/* ── Responsive Slide-Out Customer Phone Drawer ────────────────── */}
       {isCustomerDrawerOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-md bg-[#0A110F] h-full shadow-2xl border-l border-[#1A2824] flex flex-col p-5 overflow-y-auto">
-            <div className="flex items-center justify-between pb-4 border-b border-[#1A2824] mb-4">
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-xs animate-fade-in">
+          <div className="w-full max-w-md bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col p-5 overflow-y-auto">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200 mb-4">
               <div className="flex items-center gap-2">
-                <Phone className="w-4 h-4 text-[#00E676]" />
-                <h3 className="text-sm font-bold text-white">Customer Phone Simulator</h3>
+                <Phone className="w-4 h-4 text-emerald-600" />
+                <h3 className="text-sm font-semibold text-slate-900">Customer phone simulator</h3>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => {
                     setIsCustomerDrawerOpen(false);
-                    window.open('/?mode=customer', 'ZytaSafe Customer Caller', 'width=460,height=820');
+                    window.open('/?mode=customer', 'VelatoAI Customer Caller', 'width=460,height=820');
                   }}
-                  className="p-1.5 text-[#768782] hover:text-[#00E676] rounded-lg transition-colors"
+                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
                   title="Pop out to new window"
                 >
                   <ExternalLink className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setIsCustomerDrawerOpen(false)}
-                  className="p-1.5 text-[#768782] hover:text-white rounded-lg transition-colors"
+                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
                   title="Close Drawer"
                 >
                   <X className="w-4 h-4" />
@@ -1263,6 +1372,7 @@ export default function App() {
           isOpen={isProfileModalOpen}
           onClose={() => setIsProfileModalOpen(false)}
           agentRole={agentRole}
+          onToggleRole={() => handleToggleRole()}
         />
       )}
     </div>

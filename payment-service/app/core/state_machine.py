@@ -1,5 +1,5 @@
 """
-PCI Safe Mode State Machine — Phase 2 Hardened
+PCI Safe Mode State Machine - Phase 2 Hardened
 Implements strict state transitions with TIMEOUTS, RETRIES, and ABUSE LIMITS:
 NORMAL -> ISOLATING -> CAPTURING -> CONFIRMING -> TOKENIZING -> WIPING -> RESUMING
 Any error, timeout or cancellation immediately forces state into WIPING.
@@ -15,13 +15,15 @@ import time
 from typing import Optional, Dict, Any
 from .secure_memory import SecureCardBuffer
 from .token_vault import vault
-from .luhn import luhn_checksum, detect_card_brand, validate_expiry, validate_cvv
+from .luhn import luhn_checksum, detect_card_brand, validate_expiry, validate_expiry_reason, validate_cvv
 from .voice_agent import (
     parse_spoken_digits,
     handle_digit_correction,
     parse_spoken_expiry,
-    VoiceAgentPrompts
+    VoiceAgentPrompts,
+    conversational_voice_agent
 )
+from .ai_brain import payment_ai_brain
 
 # Phase 2: Configurable timeout per state (seconds)
 STATE_TIMEOUT_SECONDS: Dict[str, float] = {
@@ -62,6 +64,7 @@ class PaymentSession:
         # Captured metadata for confirmation (strictly no full PAN)
         self.detected_brand: str = "Unknown"
         self.expiry_str: str = ""
+        self.partial_pan_buffer: str = ""
 
         # Phase 2: Per-field retry counters
         self.pan_attempts: int = 0
@@ -113,6 +116,7 @@ class PaymentSession:
 
     def start_capture(self) -> Dict[str, Any]:
         """Transition from ISOLATING to CAPTURING_PAN."""
+        self.partial_pan_buffer = ""
         self.transition_to(PaymentState.CAPTURING_PAN)
         return {
             "session_id": self.session_id,
@@ -123,7 +127,7 @@ class PaymentSession:
         }
 
     def process_pan_input(self, spoken_text: str) -> Dict[str, Any]:
-        """Process spoken or entered card number."""
+        """Process spoken or entered card number with intelligent conversational handling."""
         if self.state != PaymentState.CAPTURING_PAN:
             return {"error": f"Invalid state {self.state} for PAN input."}
 
@@ -134,54 +138,117 @@ class PaymentSession:
                 "state": self.state.value,
                 "prompt": VoiceAgentPrompts.PAYMENT_FAILED,
                 "success": False,
+                "valid": False,
+                "aborted": True,
                 "timed_out": True,
+                "action": "TRANSFER_TO_AGENT",
             }
 
-        self.pan_attempts += 1
-        self.attempts += 1
-        digits = parse_spoken_digits(spoken_text)
+        res = payment_ai_brain.process_pan_dialogue(
+            spoken_text=spoken_text,
+            current_attempts=self.pan_attempts,
+            max_attempts=MAX_PAN_RETRIES,
+            existing_buffer=self.partial_pan_buffer
+        )
 
-        # If speech recognition accumulated multiple repeats, take the last 16 digits
-        if len(digits) > 19:
-            digits = digits[-16:]
+        action = res.get("action")
 
-        # Verify length (must be standard card length 13-19 digits)
-        if len(digits) < 13:
+        # Explicit transfer request from customer
+        if action == "TRANSFER_TO_AGENT":
+            self.abort(res.get("reason", "Customer requested transfer to agent"))
+            return {
+                "session_id": self.session_id,
+                "state": self.state.value,
+                "prompt": res["prompt"],
+                "valid": False,
+                "success": False,
+                "aborted": True,
+                "action": "TRANSFER_TO_AGENT",
+                "reason": res.get("reason", "customer_requested_transfer"),
+                "timeout_seconds": 0.0,
+            }
+
+        # Reassurance, customer hesitation, info questions -> do NOT penalize attempts
+        if action in ["HOLD", "SECURITY_ANSWER", "INFO_ANSWER"]:
+            return {
+                "session_id": self.session_id,
+                "state": self.state.value,
+                "prompt": res["prompt"],
+                "valid": False,
+                "held": True,
+                "action": action,
+                "attempt": self.pan_attempts,
+                "max_attempts": MAX_PAN_RETRIES,
+                "timeout_seconds": self.seconds_remaining(),
+            }
+
+        # Partial PAN buffer (e.g. 8-12 digits)
+        if action == "PARTIAL_PAN":
+            self.partial_pan_buffer = res["partial_digits"]
+            return {
+                "session_id": self.session_id,
+                "state": self.state.value,
+                "prompt": res["prompt"],
+                "valid": False,
+                "partial": True,
+                "digits_count": res["digits_count"],
+                "attempt": self.pan_attempts,
+                "max_attempts": MAX_PAN_RETRIES,
+                "action": "PARTIAL_PAN",
+                "timeout_seconds": self.seconds_remaining(),
+            }
+
+        # For incomplete PAN or Luhn failure:
+        if res.get("penalty", False):
+            self.pan_attempts += 1
+            self.attempts += 1
+
+        if not res.get("valid", False):
+            self.partial_pan_buffer = ""
             if self.pan_attempts >= MAX_PAN_RETRIES:
                 self.abort("Exceeded maximum card capture attempts.")
                 return {
                     "session_id": self.session_id,
                     "state": self.state.value,
-                    "prompt": VoiceAgentPrompts.PAYMENT_FAILED,
+                    "prompt": "We've tried verifying this card three times and it is not clearing the bank checksum. I am transferring you directly back to Alice now so she can assist you.",
+                    "valid": False,
                     "success": False,
                     "aborted": True,
+                    "action": "TRANSFER_TO_AGENT",
                     "reason": "max_pan_retries",
+                    "timeout_seconds": 0.0,
                 }
 
             return {
                 "session_id": self.session_id,
                 "state": self.state.value,
-                "prompt": f"I only heard {len(digits)} digits. Please speak your full 16-digit card number.",
+                "prompt": res["prompt"],
                 "valid": False,
+                "brand": res.get("brand", "Unknown"),
+                "last4": res.get("last4", ""),
+                "digits_count": res.get("digits_count", 0),
                 "attempt": self.pan_attempts,
                 "max_attempts": MAX_PAN_RETRIES,
-                "digits_count": len(digits),
-                "last4_heard": digits[-4:] if len(digits) >= 4 else "",
+                "action": action,
                 "timeout_seconds": self.seconds_remaining(),
             }
 
-        # Store EXACT digits in volatile secure memory buffer without altering them!
+        # Valid PAN!
+        digits = res["pan"]
+        self.partial_pan_buffer = ""
         self.buffer.set_pan(digits)
-        self.detected_brand = detect_card_brand(digits)
+        self.detected_brand = res.get("brand", "Unknown")
+        last4 = res.get("last4", digits[-4:])
         self.transition_to(PaymentState.CAPTURING_EXPIRY)
-        last4 = self.buffer.get_pan_last4()
 
         return {
             "session_id": self.session_id,
             "state": self.state.value,
-            "prompt": f"Card verified: {self.detected_brand} ending in {last4}. Please state the expiration month and year, for example 12 28.",
+            "prompt": res["prompt"],
             "brand": self.detected_brand,
             "last4": last4,
+            "valid": True,
+            "action": "PAN_SUCCESS",
             "timeout_seconds": STATE_TIMEOUT_SECONDS.get("CAPTURING_EXPIRY"),
         }
 
@@ -197,35 +264,74 @@ class PaymentSession:
                 "state": self.state.value,
                 "prompt": VoiceAgentPrompts.PAYMENT_FAILED,
                 "success": False,
+                "valid": False,
+                "aborted": True,
                 "timed_out": True,
+                "action": "TRANSFER_TO_AGENT",
             }
 
-        self.expiry_attempts += 1
+        res = payment_ai_brain.process_expiry_dialogue(
+            spoken_text,
+            current_attempts=self.expiry_attempts,
+            max_attempts=MAX_EXPIRY_RETRIES
+        )
 
-        parsed_exp = parse_spoken_expiry(spoken_text)
-        if not parsed_exp or not validate_expiry(parsed_exp):
-            # Phase 2: Per-field retry for expiry
+        action = res.get("action")
+        if action == "TRANSFER_TO_AGENT":
+            self.abort("Customer requested transfer or max retries exceeded")
+            return {
+                "session_id": self.session_id,
+                "state": self.state.value,
+                "prompt": res["prompt"],
+                "valid": False,
+                "success": False,
+                "aborted": True,
+                "action": "TRANSFER_TO_AGENT",
+                "reason": res.get("reason", "max_expiry_retries"),
+                "timeout_seconds": 0.0,
+            }
+
+        if action == "HOLD":
+            return {
+                "session_id": self.session_id,
+                "state": self.state.value,
+                "prompt": res["prompt"],
+                "valid": False,
+                "held": True,
+                "action": "HOLD",
+                "timeout_seconds": self.seconds_remaining(),
+            }
+
+        if res.get("penalty", False):
+            self.expiry_attempts += 1
+
+        if not res.get("valid", False):
             if self.expiry_attempts >= MAX_EXPIRY_RETRIES:
                 self.abort("Exceeded maximum expiry input attempts.")
                 return {
                     "session_id": self.session_id,
                     "state": self.state.value,
-                    "prompt": VoiceAgentPrompts.PAYMENT_FAILED,
+                    "prompt": "We were unable to verify the expiration date after three attempts. Reconnecting you with Alice now.",
+                    "valid": False,
                     "success": False,
                     "aborted": True,
+                    "action": "TRANSFER_TO_AGENT",
                     "reason": "max_expiry_retries",
+                    "timeout_seconds": 0.0,
                 }
 
             return {
                 "session_id": self.session_id,
                 "state": self.state.value,
-                "prompt": "Please state the expiration month and year again, for example 12 28.",
+                "prompt": res["prompt"],
                 "valid": False,
                 "attempt": self.expiry_attempts,
                 "max_attempts": MAX_EXPIRY_RETRIES,
+                "action": action,
                 "timeout_seconds": self.seconds_remaining(),
             }
 
+        parsed_exp = res["expiry"]
         self.expiry_str = parsed_exp
         self.buffer.set_expiry(parsed_exp)
         self.transition_to(PaymentState.CAPTURING_CVV)
@@ -234,6 +340,8 @@ class PaymentSession:
             "session_id": self.session_id,
             "state": self.state.value,
             "prompt": VoiceAgentPrompts.CVV_REQUEST,
+            "valid": True,
+            "action": "EXPIRY_SUCCESS",
             "timeout_seconds": STATE_TIMEOUT_SECONDS.get("CAPTURING_CVV"),
         }
 
@@ -249,40 +357,80 @@ class PaymentSession:
                 "state": self.state.value,
                 "prompt": VoiceAgentPrompts.PAYMENT_FAILED,
                 "success": False,
+                "valid": False,
+                "aborted": True,
                 "timed_out": True,
+                "action": "TRANSFER_TO_AGENT",
             }
 
-        self.cvv_attempts += 1
+        res = payment_ai_brain.process_cvv_dialogue(
+            spoken_text,
+            brand=self.detected_brand,
+            current_attempts=self.cvv_attempts,
+            max_attempts=MAX_CVV_RETRIES
+        )
 
-        digits = parse_spoken_digits(spoken_text)
-        if not validate_cvv(digits, self.detected_brand):
-            # Phase 2: Per-field retry for CVV
+        action = res.get("action")
+        if action == "TRANSFER_TO_AGENT":
+            self.abort("Customer requested transfer or max CVV retries exceeded")
+            return {
+                "session_id": self.session_id,
+                "state": self.state.value,
+                "prompt": res["prompt"],
+                "valid": False,
+                "success": False,
+                "aborted": True,
+                "action": "TRANSFER_TO_AGENT",
+                "reason": res.get("reason", "max_cvv_retries"),
+                "timeout_seconds": 0.0,
+            }
+
+        if action == "INFO":
+            return {
+                "session_id": self.session_id,
+                "state": self.state.value,
+                "prompt": res["prompt"],
+                "valid": False,
+                "held": True,
+                "action": "INFO",
+                "timeout_seconds": self.seconds_remaining(),
+            }
+
+        if res.get("penalty", False):
+            self.cvv_attempts += 1
+
+        if not res.get("valid", False):
             if self.cvv_attempts >= MAX_CVV_RETRIES:
                 self.abort("Exceeded maximum CVV input attempts.")
                 return {
                     "session_id": self.session_id,
                     "state": self.state.value,
-                    "prompt": VoiceAgentPrompts.PAYMENT_FAILED,
+                    "prompt": "We were unable to verify the security code after three attempts. Reconnecting you with Alice now.",
+                    "valid": False,
                     "success": False,
                     "aborted": True,
+                    "action": "TRANSFER_TO_AGENT",
                     "reason": "max_cvv_retries",
+                    "timeout_seconds": 0.0,
                 }
 
             return {
                 "session_id": self.session_id,
                 "state": self.state.value,
-                "prompt": "Please repeat the 3 or 4-digit security code on your card.",
+                "prompt": res["prompt"],
                 "valid": False,
                 "attempt": self.cvv_attempts,
                 "max_attempts": MAX_CVV_RETRIES,
+                "action": action,
                 "timeout_seconds": self.seconds_remaining(),
             }
 
-        self.buffer.set_cvv(digits)
+        cvv_digits = res["cvv"]
+        self.buffer.set_cvv(cvv_digits)
         self.transition_to(PaymentState.CONFIRMING)
 
         last4 = self.buffer.get_pan_last4()
-        prompt = VoiceAgentPrompts.CONFIRMATION_TEMPLATE.format(
+        prompt = conversational_voice_agent.generate_confirmation_prompt(
             brand=self.detected_brand,
             last4=last4,
             expiry=self.expiry_str
@@ -295,6 +443,8 @@ class PaymentSession:
             "brand": self.detected_brand,
             "last4": last4,
             "expiry": self.expiry_str,
+            "valid": True,
+            "action": "CVV_SUCCESS",
             "timeout_seconds": STATE_TIMEOUT_SECONDS.get("CONFIRMING"),
         }
 
@@ -316,6 +466,7 @@ class PaymentSession:
         if not customer_confirmed:
             # Customer says no -> reset buffers and restart capture
             self.buffer.wipe_all()
+            self.partial_pan_buffer = ""
             self.pan_attempts = 0  # Reset PAN attempts for restart
             self.expiry_attempts = 0
             self.cvv_attempts = 0

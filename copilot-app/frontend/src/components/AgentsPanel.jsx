@@ -5,7 +5,7 @@ const MOCK_AGENTS = [
   {
     id: 'AGT-104',
     name: 'Alice Chen',
-    email: 'alice.chen@zytasafe.internal',
+    email: 'alice.chen@velatoai.internal',
     status: 'ON_CALL',
     callWith: 'Jane Doe',
     clearance: 'Level 3 (PCI Authorized)',
@@ -16,7 +16,7 @@ const MOCK_AGENTS = [
   {
     id: 'AGT-108',
     name: 'David Miller',
-    email: 'david.miller@zytasafe.internal',
+    email: 'david.miller@velatoai.internal',
     status: 'AVAILABLE',
     callWith: null,
     clearance: 'Level 3 (PCI Authorized)',
@@ -27,7 +27,7 @@ const MOCK_AGENTS = [
   {
     id: 'AGT-112',
     name: 'Sarah Connor',
-    email: 'sarah.connor@zytasafe.internal',
+    email: 'sarah.connor@velatoai.internal',
     status: 'WRAP_UP',
     callWith: null,
     clearance: 'Level 2 (Standard Copilot)',
@@ -38,7 +38,7 @@ const MOCK_AGENTS = [
   {
     id: 'AGT-115',
     name: 'Marcus Vance',
-    email: 'marcus.vance@zytasafe.internal',
+    email: 'marcus.vance@velatoai.internal',
     status: 'AVAILABLE',
     callWith: null,
     clearance: 'Level 2 (Standard Copilot)',
@@ -49,7 +49,7 @@ const MOCK_AGENTS = [
   {
     id: 'AGT-120',
     name: 'Elena Rostova',
-    email: 'elena.rostova@zytasafe.internal',
+    email: 'elena.rostova@velatoai.internal',
     status: 'OFFLINE',
     callWith: null,
     clearance: 'Level 1 (Auditor)',

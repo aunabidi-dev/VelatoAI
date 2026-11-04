@@ -12,7 +12,7 @@ Security Rule (from §11.3 of the product doc):
    so an early slip never travels to an outside provider."
 """
 import re
-from typing import Tuple
+from typing import Tuple, Optional, overload
 
 
 _PAN_PATTERN = re.compile(
@@ -40,7 +40,16 @@ def _quick_luhn(digits: str) -> bool:
     return total % 10 == 0
 
 
-def redact_transcript(text: str) -> Tuple[str, int]:
+@overload
+def redact_transcript(text: str) -> Tuple[str, int]: ...
+
+@overload
+def redact_transcript(text: None) -> Tuple[None, int]: ...
+
+@overload
+def redact_transcript(text: Optional[str]) -> Tuple[Optional[str], int]: ...
+
+def redact_transcript(text: Optional[str]) -> Tuple[Optional[str], int]:
     """
     Scans a transcript for PAN-like digit sequences and replaces
     any Luhn-valid match with [CARD NUMBER REDACTED].
@@ -66,7 +75,7 @@ def redact_transcript(text: str) -> Tuple[str, int]:
     return cleaned, count
 
 
-def is_transcript_clean(text: str) -> bool:
+def is_transcript_clean(text: Optional[str]) -> bool:
     """
     Returns True if the transcript contains no Luhn-valid card numbers.
     Use as a quick gate before forwarding to a model.
